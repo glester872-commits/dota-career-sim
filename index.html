@@ -6076,72 +6076,573 @@ a { color: var(--ember); }
   var U = DCS.util;
   var D = DCS.data;
 
-  /* Umbral aproximado de nivel exigido por un equipo */
-  function requiredScore(team) {
-    if (team.tier === 1) return 73 + (team.quality - 72) * 0.8;
-    if (team.tier === 2) return 53 + (team.quality - 60) * 0.75;
-    return 27 + (team.quality - 46) * 0.6;
+  /* ============================================================
+     SEÑALES — de qué se entera el mercado
+     ------------------------------------------------------------
+     Lo que eres (habilidad, trayectoria) abre puertas; lo que has
+     hecho últimamente decide si te las cierran. Por eso la forma
+     reciente y la reputación de carrera viven separadas: un nombre
+     grande en mala racha no vale lo mismo que ese mismo nombre
+     en racha.
+     ============================================================ */
+
+  var FORM_SERIES = 20;
+  /* Memoria corta: las últimas series pesan casi el doble que las
+     anteriores, así que una mala racha se nota enseguida. */
+  var FORM_BUCKETS = [[0, 5, 0.40], [5, 10, 0.30], [10, 20, 0.30]];
+  /* Y memoria con fecha de caducidad: lo de hace cuatro temporadas ya
+     no dice nada de cómo estás hoy. Sin partidos dentro de la ventana
+     no hay mala forma, hay forma desconocida. */
+  var FORM_WINDOW = 3;
+
+  /** Últimas series jugadas, de la más reciente a la más antigua. */
+  function recentSeries(state, limit) {
+    var out = [];
+    function scan(tours) {
+      if (!tours) return;
+      for (var i = tours.length - 1; i >= 0 && out.length < limit; i--) {
+        var log = tours[i].log || [];
+        for (var j = log.length - 1; j >= 0 && out.length < limit; j--) {
+          out.push({ won: !!log[j].won });
+        }
+      }
+    }
+    if (state.season) scan(state.season.tournaments);
+    for (var h = state.history.length - 1, n = 0; h >= 0 && n < FORM_WINDOW && out.length < limit; h--, n++) {
+      scan(state.history[h].tournaments);
+    }
+    return out;
   }
 
-  /** Puntuación de mercado del jugador: 0-100 */
-  function marketScore(state, rng) {
+  /** Win rate reciente dando más peso a lo último. null si no hay muestra. */
+  function weightedWinRate(series) {
+    var num = 0, den = 0;
+    FORM_BUCKETS.forEach(function (b) {
+      var slice = series.slice(b[0], b[1]);
+      if (!slice.length) return;
+      var wins = 0;
+      slice.forEach(function (s) { if (s.won) wins++; });
+      num += (wins / slice.length) * b[2];
+      den += b[2];
+    });
+    return den ? num / den : null;
+  }
+
+  /** Racha actual de victorias (won=true) o de derrotas. */
+  function streak(series, won) {
+    var n = 0;
+    for (var i = 0; i < series.length && !!series[i].won === won; i++) n++;
+    return n;
+  }
+
+  /** Últimos torneos disputados, del más reciente al más antiguo. */
+  function recentTournaments(state, limit) {
+    var out = [];
+    function scan(tours) {
+      if (!tours) return;
+      for (var i = tours.length - 1; i >= 0 && out.length < limit; i--) out.push(tours[i]);
+    }
+    if (state.season) scan(state.season.tournaments);
+    for (var h = state.history.length - 1, n = 0; h >= 0 && n < FORM_WINDOW && out.length < limit; h--, n++) {
+      scan(state.history[h].tournaments);
+    }
+    return out;
+  }
+
+  /* Techo de valor que concede cada escalón del circuito: ganar un
+     regional no te pone en la agenda de un Tier 1. */
+  var LEVEL_CEILING = { open: 22, closed: 30, regional: 46, t2: 66, t1: 88, ti: 100 };
+
+  /** Lo que un resultado dice de ti, en escala 0-100. */
+  function eventWorth(t) {
+    var ceiling = LEVEL_CEILING[t.level] ||
+      (t.prestige ? U.clamp(t.prestige * 9, 20, 88) : 40);
+    var field = t.field || 8;
+    var pos = U.clamp(1 - (t.placement - 1) / Math.max(1, field - 1), 0, 1);
+    var worth = ceiling * Math.pow(pos, 0.8);
+    /* no clasificar no es un resultado: es un aviso */
+    if (t.kind === 'qualifier' && t.qualified === false) worth *= 0.35;
+    /* rendir ante un cuadro fuerte cuenta más */
+    worth *= U.lerp(0.9, 1.12, U.norm(t.avgOpp || 50, 45, 85));
+    return U.clamp(worth, 0, 100);
+  }
+
+  /** Resultados competitivos recientes: 0-100, o null sin muestra. */
+  function resultsScore(state) {
+    var tours = recentTournaments(state, 6);
+    if (!tours.length) return null;
+    var num = 0, den = 0, best = 0;
+    tours.forEach(function (t, i) {
+      var w = Math.pow(0.72, i);
+      var v = eventWorth(t);
+      num += v * w;
+      den += w;
+      if (v > best) best = v;
+    });
+    /* un gran resultado no se diluye del todo, pero tampoco tapa el resto */
+    return U.clamp(0.62 * (num / den) + 0.38 * best, 0, 100);
+  }
+
+  /**
+   * Forma reciente: 0-100. Mide el momento, no la carrera. Mezcla el
+   * balance de las últimas series, la valoración individual de los
+   * últimos torneos y el estado del jugador.
+   *
+   * `known` es false cuando no hay partidos que mirar. Entonces no es
+   * que el jugador esté en mala forma: es que todavía no hay forma que
+   * juzgar, y quien decide se fija en la ficha y en la proyección.
+   */
+  function formSignal(state) {
     var p = state.player;
-    var last = state.career.lastRating;
-    var mmrNorm = U.norm(p.mmr, 2800, 11000) * 100;
-    var base = 0.49 * p.overall + 0.22 * (last === null || last === undefined ? p.overall * 0.9 : last) +
-      0.15 * p.reputation + 0.14 * mmrNorm;
+    var wr = weightedWinRate(recentSeries(state, FORM_SERIES));
 
-    var perceived = DCS.engine.player.perceivedPotential(p, rng);
-    var potWeight = U.clamp((23 - p.age) / 9, 0, 1) * 0.32;
-    var score = base * (1 - potWeight) + perceived * potWeight;
+    var rated = recentTournaments(state, 3).filter(function (t) {
+      return typeof t.rating === 'number';
+    });
+    var ratingScore = null;
+    if (rated.length) {
+      var num = 0, den = 0;
+      rated.forEach(function (t, i) {
+        var w = Math.pow(0.7, i);
+        num += t.rating * w;
+        den += w;
+      });
+      ratingScore = num / den;
+    }
 
-    if (p.age >= 29) score -= (p.age - 28) * 2.6;
-    if (p.age >= 34) score -= (p.age - 33) * 2.6;
-    /* Estar parado pesa, pero que un chaval de 16-18 aún no tenga
-       equipo es lo normal: no puede convertirse en una espiral. */
-    var idle = Math.min(3, p.seasonsWithoutTeam - (p.age <= 18 ? 1 : 0));
-    if (idle > 0) score -= idle * 3.4;
-    if (p.flags && p.flags.provisional) score -= 3;
-    return U.clamp(score, 1, 100);
+    var known = wr !== null || ratingScore !== null;
+    var total = 0, wsum = 0;
+    function add(v, w) { total += v * w; wsum += w; }
+    /* Pesa más cómo has jugado tú que cómo ha ganado tu equipo: un buen
+       jugador en un equipo malo pierde mucho, y aun así se le ve. Si
+       fuera al revés, nadie saldría nunca de abajo.
+       La banda del win rate está calibrada sobre lo que de verdad se
+       gana en este circuito —la media ronda el 39% de series— y no
+       sobre un 50% teórico. */
+    if (ratingScore !== null) add(U.norm(ratingScore, 38, 80) * 100, 0.52);
+    if (wr !== null) add(U.norm(wr, 0.20, 0.68) * 100, 0.30);
+    add(p.form, known ? 0.18 : 1);
+
+    var form = total / wsum;
+    var idle = idleSeasons(state);
+    if (idle > 0) form -= idle * 7;                 /* sin competir no hay forma que enseñar */
+    if (p.flags && p.flags.provisional) form -= 6;
+    return { value: Math.round(U.clamp(form, 0, 100)), known: known };
   }
 
-  /* ¿Tiene ese equipo un hueco real en tu posición? */
-  function opening(state, team, rng) {
-    var incumbent = null;
-    team.roster.forEach(function (m) { if (m.role === state.player.role && !m.isPlayer) incumbent = m; });
-    if (!incumbent) return 0.9;
-    var weak = incumbent.rating < team.quality - 3;
-    var old = incumbent.age >= 30;
-    var base = 0.22;
-    if (weak) base += 0.35;
-    if (old) base += 0.22;
-    if (team.synergy < 45) base += 0.12;
-    return U.clamp(base, 0.05, 0.9);
+  function recentForm(state) {
+    return formSignal(state).value;
   }
 
-  function salaryFor(team, score, rng) {
-    var band;
-    if (team.tier === 1) band = [70000, 620000];
-    else if (team.tier === 2) band = [22000, 150000];
-    else band = [4000, 34000];
-    var t = U.clamp((score - requiredScore(team)) / 30 + 0.35, 0, 1.15);
-    var res = 0.75 + team.resources / 200;
-    var value = U.lerp(band[0], band[1], t) * res * rng.range(0.88, 1.14);
-    return Math.round(value / 500) * 500;
+  /**
+   * Reputación de carrera: 0-100. La trayectoria no se borra con una
+   * mala temporada, así que el pico histórico sigue contando.
+   */
+  function careerReputation(state) {
+    var p = state.player;
+    var c = state.career;
+    var base = Math.max(p.reputation, p.reputation * 0.55 + (c.peakReputation || 0) * 0.45);
+    var honours = Math.min(26, (c.titles || 0) * 1.9 + (c.tiWon || 0) * 9 + (c.tiPlayed || 0) * 1.7);
+    var best = c.bestRating ? U.norm(c.bestRating, 58, 92) * 10 : 0;
+    return Math.round(U.clamp(base + honours + best, 0, 100));
+  }
+
+  /* El ranking se consulta una vez por mercado y se reparte: cada
+     consulta ordena el mundo entero. */
+  function rankMap(state) {
+    var map = {};
+    DCS.engine.world.ranking(state).forEach(function (row) { map[row.id] = row.rank; });
+    return map;
+  }
+
+  function teamStanding(t) {
+    return t.quality * 0.5 + t.reputation * 0.3 + t.resources * 0.2;
+  }
+
+  /**
+   * Posición relativa de cada club dentro de su categoría: 0 el más
+   * flojo, 1 el más fuerte. Reparte el listón dentro de la banda del
+   * tier sin depender de la escala absoluta de `quality`, que se
+   * comprime y se mueve con los años.
+   */
+  function standingMap(state) {
+    var byTier = {};
+    (state.world.teams || []).forEach(function (t) {
+      if (!t) return;
+      (byTier[t.tier] = byTier[t.tier] || []).push(t);
+    });
+    var map = {};
+    Object.keys(byTier).forEach(function (tier) {
+      var list = byTier[tier].slice().sort(function (a, b) {
+        return teamStanding(a) - teamStanding(b);
+      });
+      list.forEach(function (t, i) {
+        map[t.id] = list.length > 1 ? i / (list.length - 1) : 0.5;
+      });
+    });
+    return map;
+  }
+
+  /** Posición del equipo actual llevada a 0-100, premiando el top. */
+  function rankingScore(state, ranks) {
+    var id = state.player.teamId;
+    if (!id || !ranks[id]) return null;
+    var total = (state.world.teams || []).length || 40;
+    return U.clamp(100 * Math.pow(U.clamp(1 - (ranks[id] - 1) / total, 0, 1), 1.6), 0, 100);
+  }
+
+  /**
+   * Temporadas paradas que el mercado interpreta como falta de ritmo.
+   * Que un amateur de 16 años aún no tenga equipo no es estar parado:
+   * es no haber empezado. Y se topa, porque si no la falta de equipo
+   * se alimenta a sí misma y ninguna carrera arranca.
+   */
+  function idleSeasons(state) {
+    var p = state.player;
+    if (!p.teamsPlayed || !p.teamsPlayed.length) return 0;
+    return Math.min(3, p.seasonsWithoutTeam || 0);
+  }
+
+  /** Temporadas seguidas por debajo del nivel exigible en su tier. */
+  function badSeasons(state) {
+    var n = 0;
+    for (var i = state.history.length - 1; i >= 0; i--) {
+      var h = state.history[i];
+      /* un año sin equipo no es una temporada mala: es otra cosa, y ya
+         se cobra aparte como tiempo sin competir */
+      if (!h.tier) break;
+      var bar = h.tier === 1 ? 60 : (h.tier === 2 ? 55 : 50);
+      if (h.rating === null || h.rating === undefined || h.rating < bar) n++;
+      else break;
+    }
+    return n;
+  }
+
+  /** Escalones perdidos respecto al mejor tier de la carrera. */
+  function tierDrop(state) {
+    var best = null;
+    state.history.forEach(function (h) {
+      if (h.tier && (best === null || h.tier < best)) best = h.tier;
+    });
+    if (best === null) return 0;
+    var team = DCS.engine.world.getTeam(state, state.player.teamId);
+    return Math.max(0, (team ? team.tier : 4) - best);
+  }
+
+  var DEMAND_LEVELS = ['LOW', 'MEDIUM', 'HIGH', 'VERY_HIGH'];
+
+  /**
+   * Demanda del mercado para tu puesto: cuántos equipos buscan a
+   * alguien como tú frente a cuánta competencia hay por la plaza.
+   */
+  function demandFor(state, value, form) {
+    var p = state.player;
+    var seats = 0, rivals = 0;
+    (state.world.teams || []).forEach(function (t) {
+      if (t.hasPlayer) return;
+      var holder = null;
+      t.roster.forEach(function (m) { if (m.role === p.role && !m.isPlayer) holder = m; });
+      var weight = t.tier === 1 ? 1.6 : (t.tier === 2 ? 1 : 0.5);
+      if (!holder) { seats += weight; return; }
+      if (holder.rating < p.overall - 4) seats += weight * 0.55;
+      if (holder.rating >= p.overall - 2) rivals += weight * 0.5;
+    });
+    var pressure = seats / Math.max(0.001, seats + rivals);
+    var score = pressure * 60 + U.norm(value, 25, 85) * 30 + U.norm(form, 30, 80) * 10;
+    if (p.age <= 20) score += 5;
+    if (p.age >= 31) score -= 8;
+    var idx = score >= 68 ? 3 : (score >= 52 ? 2 : (score >= 34 ? 1 : 0));
+    return { level: DEMAND_LEVELS[idx], index: idx };
+  }
+
+  /* ============================================================
+     RETRATO DE MERCADO
+     ------------------------------------------------------------
+     Un único sitio donde se decide cuánto vales hoy. Determinista:
+     la misma partida en el mismo punto da siempre el mismo retrato,
+     así que la interfaz y el generador de ofertas cuentan lo mismo.
+     ============================================================ */
+  function profile(state) {
+    var p = state.player;
+    var rng = new DCS.rng.Rng(String(state.seed) + '|MKT|' + state.year, 0);
+    var ranks = rankMap(state);
+    var standing = standingMap(state);
+
+    var fs = formSignal(state);
+    var form = fs.value;
+    var careerRep = careerReputation(state);
+    var results = resultsScore(state);
+    var rank = rankingScore(state, ranks);
+    var skill = 0.72 * p.overall + 0.28 * U.norm(p.mmr, 2800, 11000) * 100;
+    var potential = DCS.engine.player.perceivedPotential(p, rng);
+    var projection = potential * U.clamp((24 - p.age) / 8, 0.15, 1);
+
+    /* Los pesos del encargo: habilidad y nombre abren puertas, pero la
+       mitad del valor sale de lo que has hecho últimamente. */
+    var value = fs.known
+      ? skill * 0.25 +
+        form * 0.25 +
+        (results === null ? form * 0.75 : results) * 0.20 +
+        careerRep * 0.15 +
+        (rank === null ? 12 : rank) * 0.10 +
+        projection * 0.05
+      /* Sin un solo partido que juzgar —el caso de quien todavía no ha
+         debutado— sólo queda mirar la ficha, el nombre y hasta dónde
+         puede llegar. */
+      : skill * 0.46 + careerRep * 0.18 + (rank === null ? 12 : rank) * 0.06 + projection * 0.30;
+
+    var series = recentSeries(state, FORM_SERIES);
+    var wr = weightedWinRate(series);
+    var wins = 0;
+    series.forEach(function (s) { if (s.won) wins++; });
+
+    var notes = [];
+    var damage = 0, merit = 0;
+    function hit(amount, text) { damage += amount; if (text) notes.push({ bad: true, text: text }); }
+    function lift(amount, text) { merit += amount; if (text) notes.push({ bad: false, text: text }); }
+
+    /* --- lo que enfría el teléfono ---------------------------- */
+    if (wr !== null) {
+      if (wr < 0.35) hit(11, 'Tu balance reciente es muy negativo.');
+      else if (wr < 0.45) hit(6, 'Pierdes más series de las que ganas.');
+      else if (wr < 0.50) hit(2.5, 'Tu balance reciente no llega al 50%.');
+      else if (wr >= 0.60) lift(4, 'Ganas la mayoría de tus series.');
+    }
+    var losing = streak(series, false);
+    var winning = streak(series, true);
+    if (losing >= 4) hit(Math.min(8, losing * 1.6), 'Encadenas ' + losing + ' derrotas seguidas.');
+    if (winning >= 4) lift(Math.min(6, winning * 1.2), 'Llegas con ' + winning + ' victorias seguidas.');
+
+    var bad = badSeasons(state);
+    if (bad >= 2) hit(Math.min(14, (bad - 1) * 5.5), 'Acumulas ' + bad + ' temporadas por debajo de tu nivel.');
+
+    var drop = tierDrop(state);
+    if (drop > 0) hit(drop * 4, 'Has bajado de categoría respecto a tu mejor momento.');
+
+    var idle = idleSeasons(state);
+    if (idle > 0) {
+      hit(idle * 4,
+        idle === 1 ? 'Llevas un año sin competir.' : 'Llevas ' + idle + ' años sin competir.');
+    }
+    if (p.flags && p.flags.provisional) hit(4, 'Estás en el equipo como suplente.');
+    if (p.age >= 29) hit((p.age - 28) * 2.2, p.age >= 31 ? 'Tu edad pesa en las negociaciones.' : null);
+    if (p.age >= 34) hit((p.age - 33) * 2.4, null);
+
+    /* --- lo que lo enciende ----------------------------------- */
+    var tours = recentTournaments(state, 4);
+    tours.forEach(function (t, i) {
+      var w = i === 0 ? 1 : 0.55;
+      if (t.level === 'ti') {
+        if (t.placement === 1) lift(14 * w, 'Eres campeón de The International.');
+        else if (t.placement <= 3) lift(8 * w, 'Has hecho podio en The International.');
+        else lift(5 * w, 'Has jugado The International.');
+      } else if (t.level === 't1') {
+        if (t.placement === 1) lift(8 * w, 'Has ganado un torneo Tier 1.');
+        else if (t.placement <= 3) lift(4 * w, 'Has subido al podio de un Tier 1.');
+      } else if (t.level === 't2' && t.placement === 1) {
+        lift(3 * w, 'Has ganado un torneo Tier 2.');
+      }
+      if (t.kind === 'qualifier' && t.qualified) {
+        lift((t.key === 'ti_qual' ? 5 : 2) * w,
+          t.key === 'ti_qual' ? 'Te has clasificado para The International.' : null);
+      }
+    });
+    if (tours.length && typeof tours[0].rankBefore === 'number' && typeof tours[0].rankAfter === 'number' &&
+      tours[0].rankBefore - tours[0].rankAfter >= 3) {
+      lift(2, 'Tu equipo ha escalado en el ranking.');
+    }
+
+    /* Un año malo hunde el valor; tres no lo hunden tres veces más. El
+       tope existe para que una carrera se pueda reconstruir en vez de
+       caer a plomo en una sola temporada. */
+    value = value - Math.min(damage, 34) + merit;
+
+    /* Y un suelo: por mal que vaya, quien tiene nivel no vale cero. Hay
+       clubes modestos que firman talento a la baja precisamente porque
+       está a la baja, y ahí empieza cualquier reconstrucción. */
+    value = U.clamp(Math.max(value, Math.max(skill, projection) * 0.46), 1, 100);
+    return {
+      value: Math.round(value),
+      form: form,
+      careerRep: careerRep,
+      results: results === null ? null : Math.round(results),
+      rank: state.player.teamId ? (ranks[state.player.teamId] || null) : null,
+      skill: Math.round(skill),
+      potential: Math.round(potential),
+      winRate: wr,
+      record: { won: wins, lost: series.length - wins, series: series.length },
+      badSeasons: bad,
+      tierDrop: drop,
+      demand: demandFor(state, value, form),
+      notes: notes,
+      ranks: ranks,
+      standing: standing
+    };
+  }
+
+  /* ============================================================
+     LISTONES — a quién se molesta un equipo en llamar
+     ============================================================ */
+
+  /* Valor de mercado que pide cada categoría, del club más flojo al
+     más fuerte de su tier. Son listones blandos: hay excepciones,
+     pero hay que merecerlas. */
+  var VALUE_BANDS = { 1: [60, 85], 2: [40, 65], 3: [20, 45] };
+
+  function standingOf(state, team, prof) {
+    var map = prof && prof.standing ? prof.standing : standingMap(state);
+    var st = map[team.id];
+    return typeof st === 'number' ? st : 0.5;
+  }
+
+  function minValueFor(state, team, prof) {
+    var band = VALUE_BANDS[team.tier] || VALUE_BANDS[3];
+    return U.lerp(band[0], band[1], standingOf(state, team, prof));
+  }
+
+  /* Organización de élite: los Tier 1 cuyo listón ya está en 75 o más,
+     es decir el tercio alto de la categoría. Fichan primero y eligen
+     mejor, y son los únicos que pueden permitirse decir no. */
+  function isElite(state, team, prof) {
+    return team.tier === 1 && minValueFor(state, team, prof) >= 75;
+  }
+
+  /* Los grandes no arriesgan: o llegas fuerte, o llegas con un nombre
+     enorme y al menos algo de forma. */
+  function eliteGate(prof) {
+    if (prof.value >= 75 && prof.form >= 60) return true;
+    return prof.careerRep >= 90 && prof.form >= 50;
+  }
+
+  /**
+   * Encaje en el puesto: 0-100. Un equipo que necesita un pos 5 no
+   * ficha un carry por muy bueno que sea el carry.
+   */
+  function roleFit(state, team) {
+    var p = state.player;
+    var holder = null;
+    team.roster.forEach(function (m) {
+      if (!m.isPlayer && m.role === p.role) holder = m;
+    });
+    if (!holder) return 100;
+    var fit = 42;
+    if (holder.rating < team.quality - 6) fit += 30;
+    else if (holder.rating < team.quality - 2) fit += 16;
+    if (holder.age >= 30) fit += 16;
+    if (p.overall > holder.rating + 4) fit += 14;
+    else if (p.overall < holder.rating - 4) fit -= 22;
+    if (team.synergy < 45) fit += 8;
+    return U.clamp(fit, 0, 100);
+  }
+
+  /* Química y estilo: un matiz en la decisión, nunca el argumento. */
+  function teamFit(state, team) {
+    var p = state.player;
+    var fit = 50;
+    if (team.region === p.region) fit += 14;
+    if (team.synergy >= 65) fit += 8;
+    if (p.attrs) {
+      if (p.attrs.team) fit += (p.attrs.team - 55) * 0.25;
+      if (p.isCaptain && p.attrs.lead) fit += (p.attrs.lead - 55) * 0.15;
+    }
+    return U.clamp(fit, 0, 100);
+  }
+
+  /**
+   * Excepciones al listón. Existen —un club apuesta por un chaval,
+   * rescata a una vieja estrella o está desesperado por cubrir un
+   * hueco— pero son raras y no salvan cualquier distancia.
+   */
+  function exception(state, rng, team, prof, gap, fit) {
+    if (gap > 14) return null;
+    var p = state.player;
+    var elite = isElite(state, team, prof);
+    if (p.age <= 22 && prof.potential >= 80 && rng.chance(0.16)) return 'Apuesta de futuro';
+    /* una vieja estrella encuentra puerta hasta en un Tier 1 medio, pero
+       nunca en los que pelean por ganarlo todo */
+    if (prof.careerRep >= 78 && !elite && rng.chance(0.14)) return 'Crédito por tu trayectoria';
+    if (fit >= 95 && !elite && rng.chance(0.10)) return 'Necesidad urgente en tu puesto';
+    /* abajo siempre hay alguien reconstruyendo: la puerta de vuelta */
+    if (team.tier === 3 && (team.synergy < 50 || fit >= 80) && rng.chance(0.14)) return 'Club en reconstrucción';
+    return null;
+  }
+
+  /* ============================================================
+     DINERO — bandas de salario y poder de negociación
+     ============================================================ */
+
+  /* Bandas anuales por tipo de club. El encargo las da en mensual;
+     aquí van por 12, porque el contrato del juego se paga por
+     temporada. Solo se toca el techo con valor y forma de sobra. */
+  function salaryBand(state, team, prof) {
+    if (team.tier === 1) {
+      var st = standingOf(state, team, prof);
+      if (st >= 0.6) return [144000, 300000];                    /* 12.000-25.000 al mes */
+      if (st >= 0.3) return [96000, 180000];                     /*  8.000-15.000 */
+      return [60000, 120000];                                    /*  5.000-10.000 */
+    }
+    if (team.tier === 2) return [24000, 72000];                  /*  2.000-6.000  */
+    return [6000, 30000];                                        /*    500-2.500  */
+  }
+
+  function salaryFor(state, team, prof, rng, opts) {
+    opts = opts || {};
+    var band = salaryBand(state, team, prof);
+    var min = minValueFor(state, team, prof);
+
+    /* Posición dentro de la banda, convexa a propósito: el techo se
+       reserva a quien llega destacando, no a quien solo entra. */
+    var edge = Math.pow(U.clamp((prof.value - min) / 22, 0, 1), 1.35);
+    var t = edge * 0.62 +
+      U.norm(prof.form, 35, 82) * 0.20 +
+      U.norm(prof.careerRep, 30, 88) * 0.10 +
+      (prof.demand.index / 3) * 0.08;
+
+    /* Todo lo demás mueve la posición dentro de la banda, nunca por
+       encima: una banda que se rebasa no es una banda. Lo que marca
+       el club es su presupuesto. */
+    t *= 0.82 + team.resources / 300;
+    if (opts.proveIt) t *= 0.45;                  /* poco fijo, mucho objetivo */
+    if (prof.form < 40) t *= 0.80;
+    if (opts.years >= 3) t *= 0.94;               /* estabilidad a cambio de algo */
+
+    var value = U.lerp(band[0], band[1], U.clamp(t, 0, 1)) * rng.range(0.95, 1.06);
+    return U.clamp(Math.round(value / 500) * 500, band[0], Math.round(band[1] * 1.08));
+  }
+
+  /* Duración: un contrato largo es confianza, y la confianza se gana
+     llegando fuerte. Quien llega tocado firma un año y a demostrar. */
+  function negotiatedYears(team, prof, rng) {
+    if (prof.form < 30) return 1;
+    if (prof.value >= 60 && prof.form >= 52) return rng.int(2, 3);
+    if (prof.value >= 30 || prof.form >= 45) return rng.int(1, 2);
+    return 1;
   }
 
   /* El reparto de premios es parte de la negociación: las estructuras
-     modestas compensan el salario bajo con más porcentaje del bote. */
-  function prizeShareFor(team, rng) {
+     modestas compensan el salario bajo con más porcentaje del bote,
+     y con poder de negociación se araña un escalón más. */
+  function prizeShareFor(team, rng, prof) {
     var shares = D.PRIZE_SHARES || [0.70, 0.75, 0.80, 0.85, 0.90];
     var base = team.tier === 1 ? 0 : (team.tier === 2 ? 2 : 3);
-    return shares[U.clamp(base + rng.int(0, 1), 0, shares.length - 1)];
+    var shift = 0;
+    if (prof) {
+      if (prof.value >= 72 && prof.form >= 58) shift = 1;
+      else if (prof.value < 40 || prof.form < 40) shift = -1;
+    }
+    return shares[U.clamp(base + shift + rng.int(0, 1), 0, shares.length - 1)];
   }
 
-  /* Bonus por objetivos. Un club con recursos paga mejor los hitos. */
-  function bonusesFor(team, rng) {
+  /* Bonus por objetivos. Un club con recursos paga mejor los hitos, y
+     en un contrato de reconstrucción casi todo el valor está aquí. */
+  function bonusesFor(team, rng, prof, proveIt) {
     var scale = U.clamp(0.7 + team.resources / 140, 0.7, 1.45);
     var base = team.tier === 1 ? 10000 : (team.tier === 2 ? 4000 : 1200);
+    if (proveIt) scale *= 1.85;
+    else if (prof) {
+      if (prof.value >= 72 && prof.form >= 58) scale *= 1.15;
+      else if (prof.form < 40) scale *= 0.72;
+    }
     function amount(v) {
       return Math.round(v * scale * rng.range(0.85, 1.2) / 100) * 100;
     }
@@ -6173,55 +6674,91 @@ a { color: var(--ember); }
   function generateOffers(state, rng, ctx) {
     ctx = ctx || {};
     var p = state.player;
-    var score = marketScore(state, rng);
+    var prof = ctx.profile || profile(state);
     var offers = [];
     var current = DCS.engine.world.getTeam(state, p.teamId);
 
-    var candidates = state.world.teams.filter(function (t) {
-      if (current && t.id === current.id) return false;
-      if (t.hasPlayer) return false;
-      return true;
-    });
-
     var scored = [];
-    candidates.forEach(function (team) {
-      var req = requiredScore(team);
-      var fit = U.logistic(score - req, 7);
-      var regionMod = team.region === p.region ? 1 : (p.reputation > 45 ? 0.5 : 0.16);
-      var interest = fit * opening(state, team, rng) * regionMod;
-      /* factor suerte: alguien se fija en ti sin motivo evidente */
-      interest *= rng.range(0.55, 1.5);
+    (state.world.teams || []).forEach(function (team) {
+      if (current && team.id === current.id) return;
+      if (team.hasPlayer) return;
+
+      /* 1. ¿hay hueco en tu puesto? Todos los rosters están llenos, así
+         que casi siempre hay que discutirle el sitio a alguien: el
+         encaje pesa mucho en el interés, pero solo veta cuando el
+         titular es claramente mejor. */
+      var fit = roleFit(state, team);
+      if (fit < 12) return;
+
+      /* 2. ¿das el nivel que pide el club? */
+      var min = minValueFor(state, team, prof);
+      var why = null;
+      if (prof.value < min) {
+        why = exception(state, rng, team, prof, min - prof.value, fit);
+        if (!why) return;
+      }
+
+      /* 3. los grandes, además, miran cómo estás llegando */
+      if (isElite(state, team, prof) && !eliteGate(prof) && !(why && rng.chance(0.25))) return;
+
+      /* Un club tampoco persigue a quien se le ha ido de las manos: si
+         tu valor está muy por encima de su listón sabe que no puede
+         pagarte, y deja de llamar. Por eso el mercado de cada jugador
+         se concentra en su escalón, con algún tiro hacia arriba. */
+      var over = prof.value - min;
+      var reach = over > 18 ? U.clamp(1 - (over - 18) / 45, 0.12, 1) : 1;
+
+      /* La excepción ya es improbable de por sí: si salta, el interés
+         es real y no se vuelve a penalizar aquí. */
+      var interest = U.logistic(over, 8) * (fit / 100) * reach;
+      interest *= team.region === p.region ? 1 : (prof.careerRep > 45 ? 0.55 : 0.18);
+      interest *= U.lerp(0.55, 1.25, U.norm(prof.form, 30, 78));
+      interest *= U.lerp(0.85, 1.15, teamFit(state, team) / 100);
       /* las estructuras pequeñas viven de apostar por chavales */
-      if (team.tier === 3 && p.age <= 20) interest *= 1.35;
-      if (team.tier === 1 && score < req - 8) interest *= 0.05;
-      if (interest > 0.08) scored.push({ team: team, interest: interest, req: req });
+      if (team.tier === 3 && p.age <= 20) interest *= 1.3;
+      interest *= rng.range(0.7, 1.3);
+      /* Suelo de interés: por debajo de esto el club ni descuelga. Es
+         bajo a propósito, para que desde el fondo siempre quede una
+         puerta —pocas veces— por la que volver a empezar. */
+      if (interest > 0.04) scored.push({ team: team, interest: interest, why: why });
     });
 
     scored.sort(function (a, b) { return b.interest - a.interest; });
 
-    var maxOffers = 0;
+    /* El teléfono no suena siempre. Con el mercado frío puede no sonar
+       en absoluto, y quedarse sin equipo también es parte de esto. */
     var top = scored.length ? scored[0].interest : 0;
-    if (top > 0.12) maxOffers = 1;
-    if (top > 0.26) maxOffers = 2;
-    if (top > 0.42) maxOffers = 3;
-    if (top > 0.60) maxOffers = 4;
-    if (top > 0.75 && rng.chance(0.5)) maxOffers = 5;
+    var maxOffers = 0;
+    if (top > 0.07) maxOffers = 1;
+    if (top > 0.18) maxOffers = 2;
+    if (top > 0.35) maxOffers = 3;
+    if (top > 0.60 && prof.demand.index >= 2) maxOffers = 4;
+    if (top > 0.78 && prof.demand.index === 3 && rng.chance(0.5)) maxOffers = 5;
+    if (prof.demand.index === 0) maxOffers = Math.min(maxOffers, 1);
+    /* Los umbrales están puestos sobre la distribución real de la
+       partida, no sobre una escala teórica: rendir mal de verdad es
+       quedarse en la cola, no simplemente estar por debajo de 50. */
+    if (prof.form < 18 && rng.chance(0.45)) maxOffers = Math.max(0, maxOffers - 1);
+    if (prof.value < 14 && rng.chance(0.5)) maxOffers = 0;
 
-    var picked = scored.slice(0, Math.min(scored.length, maxOffers + 3));
-    picked = rng.sample(picked, maxOffers);
+    /* Se reparte por interés, no por orden estricto: el mercado de cada
+       jugador se concentra en su escalón, pero deja hueco a la oferta
+       que le queda algo grande y que quizá no vuelva. */
+    var pool = scored.slice();
+    for (var n = 0; n < maxOffers && pool.length; n++) {
+      var choice = rng.weighted(pool, function (s) { return s.interest; });
+      if (!choice) break;
+      pool.splice(pool.indexOf(choice), 1);
+      offers.push(buildOffer(state, rng, choice.team, prof, false, choice.why));
+    }
 
-    picked.forEach(function (s) {
-      offers.push(buildOffer(state, rng, s.team, score, false));
-    });
-
-    /* Renovación del equipo actual */
+    /* Renovación del equipo actual: rendir mal también cuesta el sitio */
     if (current && ctx.renewal !== false) {
-      var keep = U.logistic(score - requiredScore(current) + 6, 8) *
-        (state.career.lastRating > 55 ? 1 : 0.6) *
+      var keep = U.logistic(prof.value - minValueFor(state, current, prof) + 8, 9) *
+        U.lerp(0.45, 1.15, U.norm(prof.form, 30, 75)) *
         (current.synergy > 55 ? 1.1 : 0.9);
-      if (rng.chance(U.clamp(keep, 0.05, 0.94))) {
-        var o = buildOffer(state, rng, current, score, true);
-        offers.unshift(o);
+      if (rng.chance(U.clamp(keep, 0.04, 0.93))) {
+        offers.unshift(buildOffer(state, rng, current, prof, true, null));
       }
     }
 
@@ -6232,7 +6769,7 @@ a { color: var(--ember); }
     return offers;
   }
 
-  function buildOffer(state, rng, team, score, isRenewal) {
+  function buildOffer(state, rng, team, prof, isRenewal, why) {
     var p = state.player;
     var others = team.roster.filter(function (m) { return !m.isPlayer && m.role !== p.role; });
     var rosterLevel = others.length ? Math.round(U.avg(others, function (m) { return m.rating; })) : team.quality;
@@ -6248,7 +6785,16 @@ a { color: var(--ember); }
       role = rng.pick(alt);
     }
 
-    var years = team.tier === 1 ? rng.int(1, 3) : rng.int(1, 2);
+    /* Contrato de reconstrucción: nombre grande, forma mala. Corto,
+       poco fijo y casi todo el valor en los objetivos. Es la puerta
+       para rehacer una carrera sin regalar un contrato de estrella. */
+    var proveIt = !isRenewal && prof.form < 45 && prof.careerRep >= 60 && rng.chance(0.65);
+    var years = proveIt ? 1 : negotiatedYears(team, prof, rng);
+    var note = null;
+    if (role !== p.role) note = 'Te quieren como ' + D.ROLES[role].name + ' (' + D.ROLES[role].label + ')';
+    else if (proveIt) note = 'Contrato corto para demostrar que sigues ahí: poco fijo, mucho por objetivos';
+    else if (why) note = why;
+
     return {
       id: 'o' + (state.counters.offer++),
       teamId: team.id,
@@ -6257,16 +6803,18 @@ a { color: var(--ember); }
       tier: team.tier,
       role: role,
       years: years,
-      salary: salaryFor(team, score, rng),
-      prizeShare: prizeShareFor(team, rng),
-      bonuses: bonusesFor(team, rng),
+      salary: salaryFor(state, team, prof, rng, { years: years, proveIt: proveIt }),
+      prizeShare: prizeShareFor(team, rng, prof),
+      bonuses: bonusesFor(team, rng, prof, proveIt),
       expectation: team.expectation,
       rosterLevel: rosterLevel,
       synergy: team.synergy,
       reputation: team.reputation,
       odds: oddsLabel(team, team.tier),
       isRenewal: !!isRenewal,
-      note: role !== p.role ? 'Te quieren como ' + D.ROLES[role].name + ' (' + D.ROLES[role].label + ')' : null
+      proveIt: proveIt,
+      why: why || null,
+      note: note
     };
   }
 
@@ -6308,15 +6856,26 @@ a { color: var(--ember); }
     return true;
   }
 
+  /** Compatibilidad: el valor de mercado como número suelto (0-100). */
+  function marketScore(state) {
+    return profile(state).value;
+  }
+
   DCS.engine = DCS.engine || {};
   DCS.engine.market = {
+    profile: profile,
     marketScore: marketScore,
+    recentForm: recentForm,
+    careerReputation: careerReputation,
     generateOffers: generateOffers,
     acceptOffer: acceptOffer,
-    requiredScore: requiredScore,
+    minValueFor: minValueFor,
+    isElite: isElite,
+    roleFit: roleFit,
     salaryFor: salaryFor,
     prizeShareFor: prizeShareFor,
-    bonusesFor: bonusesFor
+    bonusesFor: bonusesFor,
+    DEMAND_LEVELS: DEMAND_LEVELS
   };
 })(window.DCS = window.DCS || {});
 
@@ -7803,8 +8362,11 @@ a { color: var(--ember); }
     var team = W().getTeam(state, p.teamId);
     var contractOver = !p.contract || p.contract.years <= 1;
 
+    var prof = DCS.engine.market.profile(state);
     var wantOffers = !team || contractOver || rng.chance(0.30);
-    var offers = wantOffers ? DCS.engine.market.generateOffers(state, rng, { renewal: contractOver }) : [];
+    var offers = wantOffers
+      ? DCS.engine.market.generateOffers(state, rng, { renewal: contractOver, profile: prof })
+      : [];
 
     state.offers = offers;
     state.season.phase = 'yearEnd';
@@ -7815,7 +8377,10 @@ a { color: var(--ember); }
       offers: offers,
       contractOver: contractOver,
       hasTeam: !!team,
-      marketScore: Math.round(DCS.engine.market.marketScore(state, rng))
+      /* el mercado se cerró con este retrato: el informe cuenta el
+         mismo que vio el generador, no uno recalculado después */
+      quiet: wantOffers && !offers.length,
+      marketScore: prof.value
     };
   }
 
@@ -9620,7 +10185,11 @@ a { color: var(--ember); }
     if (!r.offers.length) {
       body = '<p class="muted">' + (r.hasTeam
         ? 'Nadie ha llamado a tu puerta este año. Sigues donde estás.'
-        : 'Ningún equipo te ha hecho una oferta. El teléfono no suena.') + '</p>';
+        : 'Ningún equipo te ha hecho una oferta. El teléfono no suena.') + '</p>' +
+        /* si el mercado se abrió y aun así nadie llamó, conviene saber por qué */
+        (r.quiet
+          ? '<div class="row">' + c.btn('Ver estado del mercado', 'nav', { value: 'offers', variant: 'ghost' }) + '</div>'
+          : '');
     } else {
       body = '<p class="small muted">Tienes ' + r.offers.length + ' oferta' + (r.offers.length > 1 ? 's' : '') +
         ' sobre la mesa. No puedes cerrar el año sin responder.</p>' +
@@ -10328,11 +10897,84 @@ a { color: var(--ember); }
     }).join('');
   }
 
+  /* Etiquetas cualitativas: el jugador ve el diagnóstico, nunca la
+     fórmula que hay detrás. */
+  var DEMAND_TEXT = {
+    LOW: ['BAJO', 'min'],
+    MEDIUM: ['MEDIO', 'lo'],
+    HIGH: ['ALTO', 'mid'],
+    VERY_HIGH: ['MUY ALTO', 'hi']
+  };
+
+  function level3(v) {
+    return v >= 70 ? 'ALTA' : (v >= 45 ? 'MEDIA' : 'BAJA');
+  }
+
+  /**
+   * Estado del mercado: por qué suena o no suena el teléfono.
+   * Se apoya en el retrato que usa el propio generador de ofertas,
+   * así que nunca dice una cosa y ofrece otra.
+   */
+  function marketStatusCard(state) {
+    var m = DCS.engine.market;
+    if (!m || !m.profile) return '';
+    var prof = m.profile(state);
+    var dem = DEMAND_TEXT[prof.demand.level] || DEMAND_TEXT.LOW;
+    var rec = prof.record;
+
+    /* la pista principal: lo que más pesa ahora mismo, en un renglón */
+    var bad = prof.notes.filter(function (n) { return n.bad; });
+    var good = prof.notes.filter(function (n) { return !n.bad; });
+    var lead;
+    if (prof.demand.index <= 1 && bad.length) lead = bad[0].text;
+    else if (good.length) lead = good[0].text;
+    else if (bad.length) lead = bad[0].text;
+    else lead = 'Los equipos aún no tienen suficiente de ti para decidirse.';
+
+    var rows = '<div class="kv"><span>Forma reciente</span><span class="' +
+      (prof.form >= 60 ? 'good' : (prof.form < 40 ? 'bad' : '')) + '">' + level3(prof.form) + '</span></div>' +
+      '<div class="kv"><span>Reputación</span><span>' + level3(prof.careerRep) + '</span></div>';
+
+    if (rec.series) {
+      rows += '<div class="kv"><span>Últimas ' + rec.series + ' series</span><span class="mono">' +
+        rec.won + 'V - ' + rec.lost + 'D</span></div>';
+    }
+
+    var best = null;
+    (function () {
+      var seen = 0;
+      function scan(tours) {
+        (tours || []).forEach(function (t) {
+          if (seen >= 6 || t.kind === 'qualifier') return;
+          seen++;
+          if (!best || t.placement / (t.field || 8) < best.placement / (best.field || 8)) best = t;
+        });
+      }
+      if (state.season) scan(state.season.tournaments);
+      for (var i = state.history.length - 1; i >= 0 && seen < 6; i--) scan(state.history[i].tournaments);
+    })();
+    if (best) {
+      rows += '<div class="kv"><span>Mejor resultado reciente</span><span>' +
+        c.esc(best.result + ' · ' + best.name) + '</span></div>';
+    }
+    if (prof.rank) {
+      rows += '<div class="kv"><span>Ranking de tu equipo</span><span class="mono">#' + prof.rank + '</span></div>';
+    }
+
+    return c.card({
+      title: 'Estado del mercado',
+      meta: c.badge('Interés ' + dem[0], prof.demand.index >= 2 ? 'good' : (prof.demand.index === 0 ? 'bad' : 'muted')),
+      subtitle: c.esc(lead),
+      body: c.attrRow('Interés de los equipos', (prof.demand.index + 1) * 25) + '<div class="mt">' + rows + '</div>'
+    });
+  }
+
   S.offers = function (state) {
     var offers = state.offers || [];
     var p = state.player;
     if (!offers.length) {
       return '<div class="page-head"><div><h2>Mercado</h2><div class="sub">Sin ofertas activas</div></div></div>' +
+        marketStatusCard(state) +
         c.card({
           title: 'Nada sobre la mesa',
           body: '<p class="muted">No tienes ofertas pendientes ahora mismo. El mercado se abre al cerrar cada temporada.</p>'
@@ -10345,6 +10987,8 @@ a { color: var(--ember); }
       ' oferta' + (offers.length > 1 ? 's' : '') + ' · decide antes de cerrar el año</div></div>' +
       '<div class="head-right">' + c.badge('No siempre gana el mejor equipo', 'muted') + '</div></div>';
 
+    html += marketStatusCard(state);
+
     html += offers.map(function (o, i) {
       var roleChanged = o.role !== p.role;
       var top = o.tier === bestTier;
@@ -10353,7 +10997,8 @@ a { color: var(--ember); }
         '<div class="offer-head">' + c.teamMark({ id: o.teamId, name: o.teamName }, 'md') +
         c.tierBadge(o.tier) + c.badge(D.REGIONS[o.region].short) +
         (o.isRenewal ? c.badge('Renovación', 'good') : '') +
-        (roleChanged ? c.badge('Cambio de rol', 'gold') : '') + '</div>' +
+        (roleChanged ? c.badge('Cambio de rol', 'gold') : '') +
+        (o.proveIt ? c.badge('A prueba', 'info') : '') + '</div>' +
         c.tiles([
           c.tile('Rol', D.ROLES[o.role].short, D.ROLES[o.role].name),
           c.tile('Duración', o.years + (o.years === 1 ? ' año' : ' años')),
