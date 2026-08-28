@@ -3557,9 +3557,9 @@ a { color: var(--ember); }
      flat:     regionales y Tier 2, con casi todo el bote en el podio.
      ti:       The International, donde ganar lo cambia todo.        */
   var SPLITS = {
-    standard: [0.30, 0.175, 0.115, 0.08, 0.055, 0.055, 0.035, 0.035, 0.02, 0.02, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01],
+    standard: [0.30, 0.18, 0.12, 0.08, 0.055, 0.055, 0.035, 0.035, 0.02, 0.02, 0.02, 0.02, 0.015, 0.015, 0.015, 0.015],
     flat: [0.40, 0.25, 0.15, 0.10, 0.05, 0.05],
-    ti: [0.40, 0.20, 0.12, 0.08, 0.05, 0.05, 0.03, 0.03, 0.01, 0.01, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
+    ti: [0.40, 0.20, 0.12, 0.08, 0.05, 0.05, 0.03, 0.03, 0.008, 0.008, 0.006, 0.006, 0.003, 0.003, 0.003, 0.003]
   };
   var PRIZE_SPLIT = SPLITS.standard;
 
@@ -3797,6 +3797,20 @@ a { color: var(--ember); }
    * Reputación de circuito que deja un resultado. Escala por nivel:
    * un open qualifier casi no mueve la aguja, ganar The International sí.
    */
+  /**
+   * Plazas que reparte una clasificatoria. Las abiertas mandan dos equipos a
+   * la cerrada; la cerrada sólo tiene un billete para el evento principal.
+   */
+  function qualifyingSlots(template) {
+    if (!template || template.kind !== 'qualifier') return 0;
+    return template.level === 'closed' ? 1 : 2;
+  }
+
+  function qualifiedAt(template, placement) {
+    var slots = qualifyingSlots(template);
+    return slots > 0 ? placement <= slots : null;
+  }
+
   function reputationFor(template, placement, field) {
     var lv = levelOf(template);
     var n = Math.max(2, field || template.field || 8);
@@ -3807,10 +3821,12 @@ a { color: var(--ember); }
       if (placement <= 8) return 35;
       return 25;
     }
+    /* Ganar da el techo del nivel, quedar segundo la mitad, y el resto se
+       marcha con el suelo: haber competido también cuenta. */
     if (lv.id === 'open' || lv.id === 'closed') {
-      var qualified = placement <= 2;
-      var rep = placement === 1 ? lv.rep[1] : (qualified ? (lv.rep[0] + lv.rep[1]) / 2 : lv.rep[0]);
-      return Math.round(rep * (template.repMult || 1));
+      var rep = placement === 1 ? lv.rep[1]
+        : (placement === 2 ? lv.rep[1] / 2 : lv.rep[0]);
+      return Math.round(Math.max(lv.rep[0], rep) * (template.repMult || 1));
     }
     var pos = 1 - (placement - 1) / (n - 1);
     if (pos < 0) pos = 0; else if (pos > 1) pos = 1;
@@ -3822,13 +3838,17 @@ a { color: var(--ember); }
   /* Etiquetas de resultado según puesto y tipo de torneo */
   function resultLabel(placement, field, template) {
     var closed = template.level === 'closed';
+    var passes = qualifiedAt(template, placement);
     if (placement === 1) {
       if (template.kind === 'ti') return 'CAMPEÓN DE THE INTERNATIONAL';
       if (template.kind === 'international' || template.kind === 'elite') return 'Campeón internacional';
       if (template.kind === 'qualifier') return closed ? 'Clasificado al evento' : 'Clasificado';
       return 'Campeón';
     }
-    if (placement === 2) return template.kind === 'qualifier' ? (closed ? 'Clasificado al evento' : 'Clasificado') : 'Subcampeón';
+    if (placement === 2) {
+      if (template.kind !== 'qualifier') return 'Subcampeón';
+      return passes ? 'Clasificado' : 'Eliminado en la final';
+    }
     if (placement === 3) return '3er puesto';
     if (placement === 4) return '4º puesto';
     if (placement <= 6) return '5º-6º puesto';
@@ -3857,6 +3877,8 @@ a { color: var(--ember); }
   DCS.data.prizePoolFor = prizePoolFor;
   DCS.data.prizeSplitFor = prizeSplitFor;
   DCS.data.reputationFor = reputationFor;
+  DCS.data.qualifyingSlots = qualifyingSlots;
+  DCS.data.qualifiedAt = qualifiedAt;
   DCS.data.resultLabel = resultLabel;
 })(window.DCS = window.DCS || {});
 
@@ -5498,10 +5520,9 @@ a { color: var(--ember); }
   }
 
   /** "DreamLeague · Western Europe Closed Qualifier" */
-  function qualifierName(target, kind, region, year) {
-    var base = target.series ? target.label : calendarLabel(target, year, null);
+  function qualifierName(baseName, kind, region) {
     var lv = kind === 'open' ? D.TOURNAMENT_LEVELS.open : D.TOURNAMENT_LEVELS.closed;
-    return base + ' · ' + D.regionName(region) + ' ' + lv.name;
+    return baseName + ' · ' + D.regionName(region) + ' ' + lv.name;
   }
 
   function label(template, team, rng, year) {
@@ -5667,7 +5688,7 @@ a { color: var(--ember); }
     var share = contractShare(state);
     var playerPool = Math.round(teamPrize * share);
     var prize = Math.round(playerPool / D.ROSTER_SIZE);
-    var qualified = template.kind === 'qualifier' ? placement <= 2 : null;
+    var qualified = D.qualifiedAt(template, placement);
     var bonus = contractBonus(state, template, placement, !!qualified);
     var rep = D.reputationFor(template, placement, template.field);
 
@@ -5964,6 +5985,16 @@ a { color: var(--ember); }
     var region = team.region;
     var plan = [];
 
+    /* Los eventos sin marca propia estrenan nombre cada edición. El nombre
+       se fija aquí, no al empezar a jugar, para que calendario e historial
+       hablen del mismo torneo. */
+    function displayName(tpl) {
+      if (!tpl.series && !tpl.regionKey && tpl.kind !== 'league' && tpl.kind !== 'qualifier') {
+        return rng.pick(D.EVENT_HEADS) + ' ' + rng.pick(D.EVENT_TAILS);
+      }
+      return calendarLabel(tpl, year, tpl.regional ? region : null);
+    }
+
     function push(tplId, gid, role, name, access) {
       var tpl = T[tplId];
       if (!tpl) return;
@@ -5974,7 +6005,7 @@ a { color: var(--ember); }
         level: tpl.level,
         region: tpl.regional ? region : null,
         access: access || null,
-        name: name || calendarLabel(tpl, year, tpl.regional ? region : null)
+        name: name || displayName(tpl)
       });
     }
 
@@ -5984,11 +6015,11 @@ a { color: var(--ember); }
       if (!tpl) return;
       var r = accessRoute(state, rng, team, tpl);
       if (!r) return;
+      var name = displayName(tpl);
       r.route.forEach(function (kind) {
-        push(kind === 'open' ? 't3_open' : 't2_qual', tplId, kind,
-          qualifierName(tpl, kind, region, year));
+        push(kind === 'open' ? 't3_open' : 't2_qual', tplId, kind, qualifierName(name, kind, region));
       });
-      push(tplId, tplId, 'main', null, r.access);
+      push(tplId, tplId, 'main', name, r.access);
     }
 
     if (team.tier === 3) {
@@ -7577,7 +7608,7 @@ a { color: var(--ember); }
       var q = DCS.engine.tournaments.runTournament(state, rng, team, D.TOURNAMENT_TEMPLATES.ti_qual, state.year);
       absorb(state, q.acc, q.record);
       report.tournaments.push(q.record);
-      if (q.record.placement === 1) { qualified = true; via = 'Clasificatorio regional'; }
+      if (q.record.qualified) { qualified = true; via = 'Clasificatorio regional'; }
     }
     if (!qualified) return null;
 
@@ -8116,6 +8147,23 @@ a { color: var(--ember); }
     });
   }
 
+  /* Los contratos firmados antes del reparto de premios no traen porcentaje
+     ni bonus. Se les asignan los del club que los firmó, para que un Tier 1
+     no herede de golpe el 90% que sólo pagan los equipos modestos. */
+  function migrateContractTerms(state) {
+    var ct = state.player && state.player.contract;
+    if (!ct) return;
+    var needShare = typeof ct.prizeShare !== 'number';
+    var needBonus = !ct.bonuses;
+    if (!needShare && !needBonus) return;
+    var team = DCS.engine.world.getTeam(state, state.player.teamId);
+    if (!team) return;
+    var market = DCS.engine.market;
+    var rng = new DCS.rng.Rng(String(state.seed) + '|CONTRACT|' + team.id, 0);
+    if (needShare) ct.prizeShare = market.prizeShareFor(team, rng);
+    if (needBonus) ct.bonuses = market.bonusesFor(team, rng);
+  }
+
   function migrate(state) {
     mergeRetiredTeams(state);
     var teams = state.world && state.world.teams;
@@ -8131,6 +8179,7 @@ a { color: var(--ember); }
       });
     }
     injectMissingCatalogTeams(state);
+    migrateContractTerms(state);
     DCS.engine.finance.init(state);
     DCS.engine.finance.pull(state);
     if (state.finished && state.legacy && !state.legacy.finance) {
@@ -9921,7 +9970,9 @@ a { color: var(--ember); }
   function stageState(state, comp, entry, index) {
     var rec = recordFor(state, entry.name, entry.tpl);
     if (rec) {
-      var ok = rec.qualified === null ? rec.placement === 1 : !!rec.qualified;
+      /* en el evento principal basta con haberlo disputado; en una
+         clasificatoria, lo que cuenta es haber sacado la plaza */
+      var ok = entry.role === 'main' || !!rec.qualified;
       return { kind: ok ? 'done' : 'out', label: rec.result, rec: rec };
     }
     if (comp && comp.blocked && comp.blocked[entry.gid]) return { kind: 'cancelled', label: 'Cancelado' };
