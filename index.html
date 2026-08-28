@@ -3554,10 +3554,12 @@ a { color: var(--ember); }
 
   /* Reparto del bote por posición final (índice = puesto-1).
      standard: curva larga de los grandes circuitos internacionales.
+     slam:     los slams pagan más al campeón y aplanan el resto.
      flat:     regionales y Tier 2, con casi todo el bote en el podio.
      ti:       The International, donde ganar lo cambia todo.        */
   var SPLITS = {
     standard: [0.30, 0.18, 0.12, 0.08, 0.055, 0.055, 0.035, 0.035, 0.02, 0.02, 0.02, 0.02, 0.015, 0.015, 0.015, 0.015],
+    slam: [0.32, 0.17, 0.11, 0.08, 0.055, 0.055, 0.035, 0.035, 0.02, 0.02, 0.02, 0.02, 0.015, 0.015, 0.015, 0.015],
     flat: [0.40, 0.25, 0.15, 0.10, 0.05, 0.05],
     ti: [0.40, 0.20, 0.12, 0.08, 0.05, 0.05, 0.03, 0.03, 0.008, 0.008, 0.006, 0.006, 0.003, 0.003, 0.003, 0.003]
   };
@@ -3703,14 +3705,16 @@ a { color: var(--ember); }
       id: 'pgl_wallachia', series: 'pgl_wallachia', kind: 'international', level: 't1',
       label: 'PGL Wallachia',
       prestige: 8, tier: 1, field: 16, groupSeries: 5, format: 'bo2',
-      playoff: 4, playoffFormat: 'bo3', prize: 1000000, regional: false, gated: true,
+      playoff: 4, playoffFormat: 'bo3', prize: 1000000, split: 'slam',
+      regional: false, gated: true,
       logo: null
     },
     blast_slam: {
       id: 'blast_slam', series: 'blast_slam', kind: 'elite', level: 't1',
       label: 'BLAST Slam',
       prestige: 9, tier: 1, field: 12, groupSeries: 4, format: 'bo2',
-      playoff: 3, playoffFormat: 'bo3', prize: 1000000, regional: false, gated: true, invite: true,
+      playoff: 3, playoffFormat: 'bo3', prize: 1000000, split: 'slam',
+      regional: false, gated: true, invite: true,
       logo: null
     },
     dreamleague: {
@@ -5506,6 +5510,16 @@ a { color: var(--ember); }
     return rng.pick(D.EVENT_HEADS) + ' ' + rng.pick(D.EVENT_TAILS);
   }
 
+  /* Una clasificatoria genérica se nombra por su nivel y su región. La de
+     The International tiene nombre propio en el circuito y lo conserva. */
+  function qualifierTitle(template, region) {
+    var lv = D.levelOf(template);
+    if (template.label !== lv.name) {
+      return template.label + (region ? ' · ' + D.regionName(region) : '');
+    }
+    return lv.name + (region ? ' ' + D.regionName(region) : '');
+  }
+
   /** Nombre del evento sin consumir azar: para calendarios y avances. */
   function calendarLabel(template, year, region) {
     if (!template) return '';
@@ -5513,9 +5527,7 @@ a { color: var(--ember); }
     var reg = region ? D.regionalName(template, region) : null;
     if (reg) return reg + (year ? ' ' + year : '');
     var lv = D.levelOf(template);
-    if (region && (lv.id === 'open' || lv.id === 'closed')) {
-      return lv.name + ' ' + D.regionName(region);
-    }
+    if (lv.id === 'open' || lv.id === 'closed') return qualifierTitle(template, region);
     return template.label;
   }
 
@@ -5530,9 +5542,7 @@ a { color: var(--ember); }
     var nm = eventName(rng, template, year, region);
     if (nm) return nm;
     var lv = D.levelOf(template);
-    if (region && (lv.id === 'open' || lv.id === 'closed')) {
-      return lv.name + ' ' + D.regionName(region);
-    }
+    if (lv.id === 'open' || lv.id === 'closed') return qualifierTitle(template, region);
     return template.label + (region ? ' · ' + D.REGIONS[region].short : '');
   }
 
