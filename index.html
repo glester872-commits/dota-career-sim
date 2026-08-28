@@ -1945,6 +1945,27 @@ a { color: var(--ember); }
 .ti-result { font-size: 18px; font-weight: 780; letter-spacing: -.01em; }
 .ti-result.champ { color: var(--gold); text-shadow: 0 0 26px rgba(255, 194, 71, .5); }
 
+/* ============================================================
+   CIRCUITO · torneo + nivel competitivo
+   ============================================================ */
+.circuit-list { list-style: none; margin: 0; padding: 0; }
+.circuit-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 0; min-width: 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.circuit-row:last-child { border-bottom: 0; }
+.circuit-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.circuit-name b { font-size: 14px; font-weight: 650; color: var(--text); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.circuit-note { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+.circuit-row .badge { flex: none; font-size: 10.5px; letter-spacing: .14em; padding: 5px 10px; }
+.circuit-row.is-ti {
+  padding-left: 10px;
+  border-left: 2px solid rgba(255, 194, 71, .5);
+  background: linear-gradient(90deg, rgba(255, 194, 71, .07), transparent 65%);
+}
+.circuit-row.is-ti .circuit-name b { color: #ffe6ad; }
+
 /* Patrimonio */
 .finance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
 .wealth-card{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0;border-left:3px solid var(--gold)}
@@ -2201,6 +2222,10 @@ a { color: var(--ember); }
   .row { width: 100%; }
   .kv { gap: 8px; }
   .kv span:last-child { text-align: right; overflow-wrap: anywhere; }
+
+  .circuit-row { gap: 10px; padding: 10px 0; }
+  .circuit-name b { font-size: 13.5px; }
+  .circuit-row .badge { font-size: 10px; letter-spacing: .1em; padding: 5px 8px; }
 
   .modal-bg { padding: 12px; align-items: flex-end; }
   .modal { width: 100%; max-height: 92dvh; border-radius: 16px 16px 0 0; }
@@ -3597,13 +3622,15 @@ a { color: var(--ember); }
     }
   };
 
-  /* Series base del circuito. Cada temporada crea una edición (año) sin duplicar la plantilla. */
+  /* Series base del circuito. Cada temporada crea una edición (año) sin duplicar la plantilla.
+     level / levelTone son etiquetas de escaparate: describen el peso del torneo en el
+     circuito y no intervienen en el `tier` que usa el simulador. */
   var COMPETITIONS = [
-    { id: 'pgl_wallachia', name: 'PGL Wallachia', rank: 'international', templateId: 'pgl_wallachia' },
-    { id: 'blast_slam', name: 'BLAST Slam', rank: 'international', templateId: 'blast_slam' },
-    { id: 'dreamleague', name: 'DreamLeague', rank: 'international', templateId: 'dreamleague' },
-    { id: 'epl_masters', name: 'EPL Masters II', rank: 'international', templateId: 'epl_masters' },
-    { id: 'ti', name: 'The International', rank: 'ti', templateId: 'ti' }
+    { id: 'pgl_wallachia', name: 'PGL Wallachia', rank: 'international', templateId: 'pgl_wallachia', level: 'Tier 1', levelTone: 't1' },
+    { id: 'blast_slam', name: 'BLAST Slam', rank: 'international', templateId: 'blast_slam', level: 'Tier 1', levelTone: 't1' },
+    { id: 'dreamleague', name: 'DreamLeague', rank: 'international', templateId: 'dreamleague', level: 'Tier 1', levelTone: 't1' },
+    { id: 'epl_masters', name: 'EPL Masters II', rank: 'international', templateId: 'epl_masters', level: 'Tier 2', levelTone: 't2' },
+    { id: 'ti', name: 'The International', rank: 'ti', templateId: 'ti', level: 'Tier S', levelTone: 'gold' }
   ];
 
   /* Nombres de eventos generados: cabecera + apellido */
@@ -9067,7 +9094,11 @@ a { color: var(--ember); }
     var series = D.COMPETITIONS || [];
     var map = {};
     series.forEach(function (s) {
-      map[s.id] = { id: s.id, name: s.name, rank: s.rank, played: 0, wins: 0 };
+      map[s.id] = {
+        id: s.id, name: s.name, rank: s.rank,
+        level: s.level, levelTone: s.levelTone,
+        played: 0, wins: 0
+      };
     });
     function eat(t) {
       if (!t) return;
@@ -9085,16 +9116,19 @@ a { color: var(--ember); }
 
   function competitionCircuitCard(state) {
     var rows = competitionTally(state).map(function (s) {
-      var rank = s.rank === 'ti' ? 'Máximo nivel' : 'Internacional';
       var rec = s.played
         ? (s.wins ? s.wins + ' título' + (s.wins === 1 ? '' : 's') + ' · ' + s.played + ' ediciones' : s.played + ' ediciones')
-        : rank;
-      return '<div class="kv"><span>' + c.esc(s.name) + '</span><span>' + rec + '</span></div>';
+        : '';
+      return '<li class="' + (s.rank === 'ti' ? 'circuit-row is-ti' : 'circuit-row') + '">' +
+        '<span class="circuit-name"><b>' + c.esc(s.name) + '</b>' +
+        (rec ? '<span class="circuit-note">' + c.esc(rec) + '</span>' : '') +
+        '</span>' +
+        c.badge(s.level || 'Tier 1', s.levelTone || 't1') +
+        '</li>';
     }).join('');
     return c.card({
       title: 'Circuito',
-      subtitle: 'La misma competición se reedita cada temporada. The International es el techo.',
-      body: rows
+      body: '<ul class="circuit-list">' + rows + '</ul>'
     });
   }
 
