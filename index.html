@@ -7463,7 +7463,8 @@ a { color: var(--ember); }
     var pressure = seats / Math.max(0.001, seats + rivals);
     var score = pressure * 60 + U.norm(value, 25, 85) * 30 + U.norm(form, 30, 80) * 10;
     if (p.age <= 20) score += 5;
-    if (p.age >= 31) score -= 8;
+    if (p.age >= 33 && p.age <= 34) score -= 3;
+    else if (p.age >= 35) score -= 6 + Math.min(6, p.age - 35);
     if (p.flags && p.flags.marketBuzz) score += U.clamp(p.flags.marketBuzz, -12, 12);
     var idx = score >= 68 ? 3 : (score >= 52 ? 2 : (score >= 34 ? 1 : 0));
     return { level: DEMAND_LEVELS[idx], index: idx };
@@ -7539,8 +7540,10 @@ a { color: var(--ember); }
         idle === 1 ? 'Llevas un año sin competir.' : 'Llevas ' + idle + ' años sin competir.');
     }
     if (p.flags && p.flags.provisional) hit(4, 'Estás en el equipo como suplente.');
-    if (p.age >= 29) hit((p.age - 28) * 2.2, p.age >= 31 ? 'Tu edad pesa en las negociaciones.' : null);
-    if (p.age >= 34) hit((p.age - 33) * 2.4, null);
+    /* Edad: modificador progresivo, no sentencia. 26-30 casi no pesa. */
+    if (p.age >= 31 && p.age <= 32) hit(1.2, null);
+    else if (p.age >= 33 && p.age <= 34) hit(3.5, 'Tu edad empieza a pesar en las negociaciones.');
+    else if (p.age >= 35) hit(5 + (p.age - 35) * 1.8, 'Tu edad pesa en las negociaciones.');
 
     /* --- lo que lo enciende ----------------------------------- */
     var tours = recentTournaments(state, 4);
@@ -7782,6 +7785,129 @@ a { color: var(--ember); }
   }
 
   /**
+   * Techo de tier al debutar: un rookie normal solo mira Tier 3;
+   * uno excepcional puede asomar a Tier 2. Nunca Tier 1 élite.
+   */
+  function debutMaxTier(player) {
+    if (player.potential >= 88 && player.overall >= 36) return 2;
+    if (player.potential >= 82 && player.overall >= 40) return 2;
+    return 3;
+  }
+
+  /** Equipos elegibles para debut: misma región, tier permitido. */
+  function debutPool(state, player) {
+    var region = player.region;
+    var maxTier = debutMaxTier(player); /* 3 = solo T3; 2 = T2+T3 */
+    return (state.world.teams || []).filter(function (t) {
+      if (!t || t.hasPlayer) return false;
+      if (t.region !== region) return false;
+      if (maxTier === 3) return t.tier === 3;
+      return t.tier === 2 || t.tier === 3;
+    });
+  }
+
+  /**
+   * Firma el primer contrato: región del jugador + tier de entrada.
+   * Se llama al crear la partida para que la región tenga efecto real.
+   */
+  function signDebut(state, rng) {
+    var p = state.player;
+    if (!p || p.teamId) return null;
+    var pool = debutPool(state, p);
+    if (!pool.length) {
+      /* Sin clubes de la región (caso raro): abre a cualquier T3 libre. */
+      pool = (state.world.teams || []).filter(function (t) {
+        return t && !t.hasPlayer && t.tier === 3;
+      });
+    }
+    if (!pool.length) return null;
+
+    var team = rng.weighted(pool, function (t) { return t.tier === 3 ? 10 : 2; });
+    if (!team) team = rng.pick(pool);
+
+    var prof = profile(state);
+    var years = team.tier === 3 ? rng.int(1, 2) : 1;
+    var salary = salaryFor(state, team, prof, rng, { years: years });
+    /* Debut: parte baja de la banda. */
+    var band = salaryBand(state, team, prof);
+    salary = Math.min(salary, Math.round(U.lerp(band[0], band[1], 0.35) / 500) * 500);
+
+    DCS.engine.world.joinTeam(state, team, {
+      years: years,
+      salary: salary,
+      prizeShare: prizeShareFor(team, rng, prof),
+      bonuses: bonusesFor(team, rng, prof, false),
+      signedYear: state.year,
+      expectation: team.expectation
+    });
+    p.seasonsWithoutTeam = 0;
+    p.flags = p.flags || {};
+    if (team.tier === 2) p.flags.provisional = true;
+
+    state.career = state.career || {};
+    state.career.startingRegion = p.region;
+    state.career.startingTeamId = team.id;
+    state.career.highlights = state.career.highlights || [];
+    state.career.highlights.push({
+      year: state.year,
+      text: 'Debut profesional · ' + team.name + ' · ' +
+        ((DCS.data.REGIONS[team.region] && DCS.data.REGIONS[team.region].short) || team.region) +
+        ' · Tier ' + team.tier
+    });
+    return team;
+  }
+
+  /**
+   * Red de seguridad: cerca de 2-3 temporadas sin equipo abre tryouts /
+   * contratos de recuperación en Tier 3 (sobre todo regionales).
+   * Nunca regala un Tier 1.
+   */
+  function ensureSafetyOffers(state, rng, prof, offers) {
+    var p = state.player;
+    if (p.teamId) return offers;
+    var idle = p.seasonsWithoutTeam || 0;
+    var need = idle >= 2 || (idle >= 1 && !offers.length) || (!offers.length && (p.proYears || 0) >= 1);
+    if (!need && idle < 3) return offers;
+    if (offers.some(function (o) { return o.tier === 3 || o.tryout; }) && idle < 3) return offers;
+
+    var pool = (state.world.teams || []).filter(function (t) {
+      return t && !t.hasPlayer && t.tier === 3 &&
+        (t.region === p.region || t.region === p.homeRegion);
+    });
+    if (!pool.length) {
+      pool = (state.world.teams || []).filter(function (t) {
+        return t && !t.hasPlayer && t.tier === 3;
+      });
+    }
+    if (!pool.length) {
+      pool = (state.world.teams || []).filter(function (t) {
+        return t && !t.hasPlayer && t.tier >= 2;
+      });
+    }
+    if (!pool.length) return offers;
+
+    /* Evitar duplicar un club ya ofertado. */
+    var taken = {};
+    offers.forEach(function (o) { taken[o.teamId] = true; });
+    pool = pool.filter(function (t) { return !taken[t.id]; });
+    if (!pool.length) return offers;
+
+    var team = rng.pick(pool);
+    var offer = buildOffer(state, rng, team, prof, false, idle >= 2 ? 'Oportunidad de regreso' : 'Club en reconstrucción');
+    offer.years = 1;
+    offer.proveIt = true;
+    offer.tryout = idle >= 2;
+    offer.salary = Math.min(offer.salary, salaryFor(state, team, prof, rng, { years: 1, proveIt: true }));
+    offer.note = idle >= 3
+      ? 'Tryout de recuperación: un año para demostrar. Sin este tipo de puerta el mercado te habría olvidado.'
+      : (idle >= 2
+        ? 'Tryout / contrato corto de recuperación en Tier 3. Rendir bien puede abrir algo mejor.'
+        : (offer.note || 'Contrato corto para volver a competir.'));
+    offers.push(offer);
+    return offers;
+  }
+
+  /**
    * Genera las ofertas del mercado de fin de temporada.
    * @param ctx { renewal:boolean }
    */
@@ -7825,11 +7951,20 @@ a { color: var(--ember); }
       /* La excepción ya es improbable de por sí: si salta, el interés
          es real y no se vuelve a penalizar aquí. */
       var interest = U.logistic(over, 8) * (fit / 100) * reach;
-      interest *= team.region === p.region ? 1 : (prof.careerRep > 45 ? 0.55 : 0.18);
+      interest *= team.region === p.region || team.region === p.homeRegion
+        ? 1 : (prof.careerRep > 45 ? 0.55 : 0.18);
       interest *= U.lerp(0.55, 1.25, U.norm(prof.form, 30, 78));
       interest *= U.lerp(0.85, 1.15, teamFit(state, team) / 100);
       /* las estructuras pequeñas viven de apostar por chavales */
       if (team.tier === 3 && p.age <= 20) interest *= 1.3;
+      /* Sin equipo: el mercado inferior se abre; el élite se cierra. */
+      var idleN = p.seasonsWithoutTeam || 0;
+      if (idleN >= 1 && team.tier === 3) interest *= 1.35 + idleN * 0.25;
+      if (idleN >= 2 && team.tier === 2) interest *= 1.15;
+      if (idleN >= 1 && team.tier === 1) interest *= Math.max(0.15, 0.7 - idleN * 0.2);
+      /* Rookie / skill bajo: no hay atajo a Tier 1 élite. */
+      if (team.tier === 1 && (p.proYears || 0) < 2 && prof.value < 70) interest *= 0.05;
+      if (team.tier === 1 && prof.form < 45 && prof.value < 75) interest *= 0.45;
       interest *= rng.range(0.7, 1.3);
       /* Suelo de interés: por debajo de esto el club ni descuelga. Es
          bajo a propósito, para que desde el fondo siempre quede una
@@ -7853,7 +7988,10 @@ a { color: var(--ember); }
        partida, no sobre una escala teórica: rendir mal de verdad es
        quedarse en la cola, no simplemente estar por debajo de 50. */
     if (prof.form < 18 && rng.chance(0.45)) maxOffers = Math.max(0, maxOffers - 1);
-    if (prof.value < 14 && rng.chance(0.5)) maxOffers = 0;
+    if (prof.value < 14 && rng.chance(0.5) && (p.seasonsWithoutTeam || 0) < 2) maxOffers = 0;
+    /* Con inactividad larga siempre queda al menos una llamada inferior. */
+    if ((p.seasonsWithoutTeam || 0) >= 2) maxOffers = Math.max(maxOffers, 1);
+    if ((p.seasonsWithoutTeam || 0) >= 3) maxOffers = Math.max(maxOffers, 2);
 
     /* Se reparte por interés, no por orden estricto: el mercado de cada
        jugador se concentra en su escalón, pero deja hueco a la oferta
@@ -7876,8 +8014,11 @@ a { color: var(--ember); }
       }
     }
 
+    offers = ensureSafetyOffers(state, rng, prof, offers);
+
     offers.sort(function (a, b) {
       if (a.isRenewal !== b.isRenewal) return a.isRenewal ? -1 : 1;
+      if (!!a.tryout !== !!b.tryout) return a.tryout ? 1 : -1;
       return a.tier - b.tier || b.salary - a.salary;
     });
     return offers;
@@ -7902,7 +8043,10 @@ a { color: var(--ember); }
     /* Contrato de reconstrucción: nombre grande, forma mala. Corto,
        poco fijo y casi todo el valor en los objetivos. Es la puerta
        para rehacer una carrera sin regalar un contrato de estrella. */
-    var proveIt = !isRenewal && prof.form < 45 && prof.careerRep >= 60 && rng.chance(0.65);
+    var proveIt = !isRenewal && (
+      (prof.form < 45 && prof.careerRep >= 60 && rng.chance(0.65)) ||
+      ((p.seasonsWithoutTeam || 0) >= 2 && team.tier >= 2 && rng.chance(0.8))
+    );
     var years = proveIt ? 1 : negotiatedYears(team, prof, rng);
     var note = null;
     if (role !== p.role) note = 'Te quieren como ' + D.ROLES[role].name + ' (' + D.ROLES[role].label + ')';
@@ -7983,6 +8127,10 @@ a { color: var(--ember); }
     careerReputation: careerReputation,
     generateOffers: generateOffers,
     acceptOffer: acceptOffer,
+    signDebut: signDebut,
+    debutPool: debutPool,
+    debutMaxTier: debutMaxTier,
+    ensureSafetyOffers: ensureSafetyOffers,
     minValueFor: minValueFor,
     isElite: isElite,
     roleFit: roleFit,
@@ -8749,53 +8897,79 @@ a { color: var(--ember); }
     return out;
   }
 
+  /**
+   * Única puerta de retirada: edad >= 26 y al menos 10 años profesionales.
+   * Cumplirla solo hace posible plantearse retirarse; no lo fuerza.
+   */
+  function canConsiderRetirement(player) {
+    if (!player) return false;
+    return player.age >= 26 && (player.proYears || 0) >= 10;
+  }
+
+  /** Probabilidad base por edad una vez elegible (antes de modificadores). */
+  function retirementAgeChance(age) {
+    if (age < 26) return 0;
+    if (age <= 28) return 0.02;
+    if (age <= 31) return 0.06;
+    if (age <= 34) return 0.14;
+    if (age <= 36) return 0.28;
+    return 0.42;
+  }
+
   /** Devuelve una propuesta de retirada o null. */
   function evaluate(state, rng) {
     var p = state.player;
     if (p.age >= 38) return null;               /* lo gestiona el fin de año */
-    if (p.age < 20) return null;                /* con 19 años nadie tira la toalla */
+    if (!canConsiderRetirement(p)) return null;
     if (state.career.lastRetirementPrompt && state.year - state.career.lastRetirementPrompt < 2) return null;
 
-    var score = 0;
+    var chance = retirementAgeChance(p.age);
     var reasons = [];
-
-    if (p.age >= 33) { score += (p.age - 32) * 1.3; reasons.push('Tienes ' + p.age + ' años.'); }
-    else if (p.age >= 30) { score += 0.8; }
+    reasons.push('Tienes ' + p.age + ' años y ' + p.proYears + ' temporadas profesionales.');
 
     var rs = lastRatings(state, 3);
     var bad = 0;
     rs.forEach(function (r) { if (r === null || r < 56) bad++; });
-    if (bad >= 2) { score += bad * 1.6; reasons.push('Encadenas ' + bad + ' temporadas por debajo de tu nivel.'); }
+    if (bad >= 2) {
+      chance += bad * 0.05;
+      reasons.push('Encadenas ' + bad + ' temporadas por debajo de tu nivel.');
+    }
 
     if (p.seasonsWithoutTeam >= 1) {
-      score += p.seasonsWithoutTeam * 2.6;
-      reasons.push(p.seasonsWithoutTeam === 1 ? 'Llevas un año sin equipo.' : 'Llevas ' + p.seasonsWithoutTeam + ' años sin equipo.');
+      chance += p.seasonsWithoutTeam * 0.06;
+      reasons.push(p.seasonsWithoutTeam === 1
+        ? 'Llevas un año sin equipo.'
+        : 'Llevas ' + p.seasonsWithoutTeam + ' años sin equipo.');
     }
-    if (!p.teamId && p.age >= 24) { score += 1.5; }
 
     var drop = p.peakOverall - p.overall;
-    if (drop >= 7) { score += drop * 0.32; reasons.push('Tu nivel ha caído claramente desde tu mejor momento.'); }
+    if (drop >= 7) {
+      chance += Math.min(0.12, drop * 0.012);
+      reasons.push('Tu nivel ha caído claramente desde tu mejor momento.');
+    }
 
-    if (p.morale < 38) { score += 2; reasons.push('La motivación está por los suelos.'); }
-    if (p.reputation < 12 && p.age >= 22) { score += 1.6; reasons.push('El circuito casi ha dejado de contar contigo.'); }
+    if (p.morale < 38) {
+      chance += 0.05;
+      reasons.push('La motivación está por los suelos.');
+    }
 
-    var lastTier = null;
-    for (var i = state.history.length - 1; i >= 0; i--) { if (state.history[i].tier) { lastTier = state.history[i].tier; break; } }
-    var bestTier = 3;
-    state.history.forEach(function (h) { if (h.tier && h.tier < bestTier) bestTier = h.tier; });
-    if (lastTier && lastTier > bestTier) { score += (lastTier - bestTier) * 1.4; reasons.push('Has bajado de Tier respecto a tu mejor etapa.'); }
+    var team = DCS.engine.world.getTeam(state, p.teamId);
+    if (team && team.tier === 1 && p.overall >= 80 && (state.career.lastRating || 0) >= 70) {
+      chance *= 0.45;
+      reasons.push('Sigues rindiendo a alto nivel en Tier 1.');
+    } else if (team && (state.career.lastRating || 0) >= 72) {
+      chance *= 0.65;
+    } else if (!team && p.seasonsWithoutTeam >= 2 && p.overall < 65) {
+      chance *= 1.35;
+    }
 
-    /* A los veinti pocos hace falta un desastre real para plantearse dejarlo */
-    if (p.age < 24) score *= 0.6;
-    else if (p.age < 27) score *= 0.85;
-
-    if (score < 6) return null;
-    if (!rng.chance(U.clamp((score - 5) / 8, 0.12, 0.9))) return null;
+    chance = U.clamp(chance, 0.01, 0.75);
+    if (!rng.chance(chance)) return null;
 
     state.career.lastRetirementPrompt = state.year;
     return {
       age: p.age,
-      score: Math.round(score * 10) / 10,
+      score: Math.round(chance * 100) / 100,
       reasons: reasons,
       text: 'Han pasado los años y el juego ya no te devuelve lo mismo. Nadie te va a decir cuándo parar.'
     };
@@ -8971,6 +9145,7 @@ a { color: var(--ember); }
 
   DCS.engine = DCS.engine || {};
   DCS.engine.retirement = {
+    canConsiderRetirement: canConsiderRetirement,
     evaluate: evaluate,
     retire: retire,
     computeLegacy: computeLegacy,
@@ -9874,6 +10049,8 @@ a { color: var(--ember); }
     DCS.engine.finance.init(state);
     state.career.acc = DCS.engine.stats.blank(state.player.role);
     state.world = DCS.engine.world.createWorld(rng);
+    /* Debut: la región elegida decide el pool; el tier de entrada es bajo. */
+    if (DCS.engine.market.signDebut) DCS.engine.market.signDebut(state, rng);
     DCS.engine.season.startSeason(state);
 
     save(state);
@@ -10035,6 +10212,13 @@ a { color: var(--ember); }
     if (!state.eventLog) state.eventLog = [];
     if (!state.usedEvents) state.usedEvents = {};
     if (state.career && !state.career.highlights) state.career.highlights = [];
+    if (state.player) {
+      if (typeof state.player.seasonsWithoutTeam !== 'number') state.player.seasonsWithoutTeam = 0;
+      if (!state.player.homeRegion) state.player.homeRegion = state.player.region;
+      if (state.career && !state.career.startingRegion) {
+        state.career.startingRegion = state.player.homeRegion || state.player.region;
+      }
+    }
     if (state.season && !state.season.flags) state.season.flags = { upsetWin: false, badLoss: false };
     if (state.player && state.player.flags && typeof state.player.flags.marketBuzz !== 'number') {
       state.player.flags.marketBuzz = state.player.flags.marketBuzz || 0;
