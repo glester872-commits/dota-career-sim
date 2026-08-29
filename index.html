@@ -7794,73 +7794,162 @@ a { color: var(--ember); }
     return 3;
   }
 
-  /** Equipos elegibles para debut: misma región, tier permitido. */
-  function debutPool(state, player) {
+  /**
+   * Alcance del mercado. Al comienzo es REGIONAL (solo startingRegion).
+   * Con reputación, valor, títulos o experiencia se abre.
+   */
+  function marketReach(state, prof) {
+    var p = state.player;
+    var pro = p.proYears || 0;
+    var rep = Math.max(p.reputation || 0, (prof && prof.careerRep) || 0);
+    var value = (prof && typeof prof.value === 'number') ? prof.value : 0;
+    var titles = (state.career && state.career.titles) || 0;
+    var ti = (state.career && state.career.tiPlayed) || 0;
+    var buzz = (p.flags && p.flags.marketBuzz) || 0;
+
+    if (rep >= 68 || value >= 72 || titles >= 2 || ti >= 1 || (pro >= 5 && rep >= 55)) {
+      return 'international';
+    }
+    if (rep >= 42 || value >= 55 || titles >= 1 || pro >= 3 || buzz >= 8) {
+      return 'multi';
+    }
+    return 'regional';
+  }
+
+  function startingRegionOf(state) {
+    var p = state.player;
+    return (state.career && state.career.startingRegion) ||
+      (p && (p.homeRegion || p.region)) || null;
+  }
+
+  function sameMarketRegion(state, team) {
+    var p = state.player;
+    var start = startingRegionOf(state);
+    return team.region === p.region ||
+      team.region === p.homeRegion ||
+      (start && team.region === start);
+  }
+
+  /** Equipos elegibles para debut: misma región, tier permitido. Sin T1. */
+  function debutPool(state, player, opts) {
+    opts = opts || {};
     var region = player.region;
-    var maxTier = debutMaxTier(player); /* 3 = solo T3; 2 = T2+T3 */
+    var maxTier = typeof opts.maxTier === 'number' ? opts.maxTier : debutMaxTier(player);
     return (state.world.teams || []).filter(function (t) {
       if (!t || t.hasPlayer) return false;
       if (t.region !== region) return false;
+      if (t.tier === 1) return false;
       if (maxTier === 3) return t.tier === 3;
       return t.tier === 2 || t.tier === 3;
     });
   }
 
   /**
-   * Firma el primer contrato: región del jugador + tier de entrada.
-   * Se llama al crear la partida para que la región tenga efecto real.
+   * Ofertas de debut: el jugador empieza libre y elige.
+   * Solo equipos de startingRegion; 2–5 contratos distintos.
+   * No asigna equipo ni startingTeamId.
    */
-  function signDebut(state, rng) {
+  function generateInitialOffers(state, rng) {
     var p = state.player;
-    if (!p || p.teamId) return null;
-    var pool = debutPool(state, p);
-    if (!pool.length) {
-      /* Sin clubes de la región (caso raro): abre a cualquier T3 libre. */
-      pool = (state.world.teams || []).filter(function (t) {
-        return t && !t.hasPlayer && t.tier === 3;
-      });
-    }
-    if (!pool.length) return null;
-
-    var team = rng.weighted(pool, function (t) { return t.tier === 3 ? 10 : 2; });
-    if (!team) team = rng.pick(pool);
-
-    var prof = profile(state);
-    var years = team.tier === 3 ? rng.int(1, 2) : 1;
-    var salary = salaryFor(state, team, prof, rng, { years: years });
-    /* Debut: parte baja de la banda. */
-    var band = salaryBand(state, team, prof);
-    salary = Math.min(salary, Math.round(U.lerp(band[0], band[1], 0.35) / 500) * 500);
-
-    DCS.engine.world.joinTeam(state, team, {
-      years: years,
-      salary: salary,
-      prizeShare: prizeShareFor(team, rng, prof),
-      bonuses: bonusesFor(team, rng, prof, false),
-      signedYear: state.year,
-      expectation: team.expectation
-    });
-    p.seasonsWithoutTeam = 0;
-    p.flags = p.flags || {};
-    if (team.tier === 2) p.flags.provisional = true;
+    if (!p || p.teamId) return [];
 
     state.career = state.career || {};
     state.career.startingRegion = p.region;
-    state.career.startingTeamId = team.id;
-    state.career.highlights = state.career.highlights || [];
-    state.career.highlights.push({
-      year: state.year,
-      text: 'Debut profesional · ' + team.name + ' · ' +
-        ((DCS.data.REGIONS[team.region] && DCS.data.REGIONS[team.region].short) || team.region) +
-        ' · Tier ' + team.tier
+    /* startingTeamId solo al firmar */
+
+    var prof = profile(state);
+    var maxTier = debutMaxTier(p);
+    var pool = debutPool(state, p, { maxTier: maxTier });
+
+    /* Fallback: si faltan Tier 3 en la región, abre Tier 2 de la MISMA región.
+       Nunca inventa ofertas de otras regiones. */
+    if (pool.length < 2) {
+      var wider = debutPool(state, p, { maxTier: 2 });
+      if (wider.length > pool.length) pool = wider;
+    }
+    if (!pool.length) {
+      pool = (state.world.teams || []).filter(function (t) {
+        return t && !t.hasPlayer && t.region === p.region && t.tier >= 2;
+      });
+    }
+    if (!pool.length) return [];
+
+    var scored = [];
+    pool.forEach(function (team) {
+      var fit = roleFit(state, team);
+      if (fit < 8) return;
+      var interest = (fit / 100) * (team.tier === 3 ? 1.25 : 0.72);
+      interest *= U.lerp(0.75, 1.25, U.norm(prof.potential, 55, 95));
+      interest *= U.lerp(0.85, 1.15, U.norm(p.overall, 18, 48));
+      if (team.tier === 2 && maxTier === 2) interest *= 1.1;
+      interest *= rng.range(0.8, 1.25);
+      scored.push({ team: team, interest: Math.max(0.05, interest) });
     });
-    return team;
+    scored.sort(function (a, b) { return b.interest - a.interest; });
+    if (!scored.length) {
+      pool.forEach(function (team) {
+        scored.push({ team: team, interest: team.tier === 3 ? 1 : 0.5 });
+      });
+    }
+
+    var want = 2;
+    if (scored.length >= 3) want = 3;
+    if (scored.length >= 4 && (prof.potential >= 78 || (prof.demand && prof.demand.index >= 2))) want = 4;
+    if (scored.length >= 5 && prof.potential >= 88 && rng.chance(0.4)) want = 5;
+    want = Math.min(want, scored.length);
+    if (scored.length >= 2) want = Math.max(2, want);
+    else want = scored.length;
+
+    var offers = [];
+    var bag = scored.slice();
+    var yearCycle = [1, 1, 2, 1, 2];
+    var shareT3 = [0.90, 0.85, 0.80, 0.85, 0.75];
+    var shareT2 = [0.75, 0.80, 0.70, 0.75];
+
+    for (var n = 0; n < want && bag.length; n++) {
+      var choice = rng.weighted(bag, function (s) { return s.interest; });
+      if (!choice) choice = bag[0];
+      bag.splice(bag.indexOf(choice), 1);
+      var team = choice.team;
+      var offer = buildOffer(state, rng, team, prof, false,
+        team.tier === 2 ? 'Apuesta temprana en tu región' : 'Puerta de entrada en tu región');
+      offer.years = yearCycle[n % yearCycle.length];
+      var band = salaryBand(state, team, prof);
+      var tPay = U.clamp(0.12 + n * 0.11 + rng.range(0, 0.1), 0.08, team.tier === 2 ? 0.55 : 0.48);
+      offer.salary = Math.round(U.lerp(band[0], band[1], tPay) / 500) * 500;
+      offer.prizeShare = team.tier === 2
+        ? shareT2[n % shareT2.length]
+        : shareT3[n % shareT3.length];
+      offer.proveIt = false;
+      offer.tryout = false;
+      offer.debut = true;
+      if (!offer.note) {
+        offer.note = team.tier === 2
+          ? 'Te ven con margen: contrato de debut en Tier 2 regional.'
+          : 'Contrato de debut. Compara y elige dónde empezar.';
+      }
+      offers.push(offer);
+    }
+
+    offers.sort(function (a, b) {
+      return a.tier - b.tier || b.salary - a.salary;
+    });
+    state.offers = offers;
+    return offers;
+  }
+
+  /**
+   * Compat: ya no asigna equipo automáticamente.
+   * Genera el mercado inicial regional y deja al jugador libre.
+   */
+  function signDebut(state, rng) {
+    return generateInitialOffers(state, rng);
   }
 
   /**
    * Red de seguridad: cerca de 2-3 temporadas sin equipo abre tryouts /
    * contratos de recuperación en Tier 3 (sobre todo regionales).
-   * Nunca regala un Tier 1.
+   * Nunca regala un Tier 1. Con reach regional no salta de región.
    */
   function ensureSafetyOffers(state, rng, prof, offers) {
     var p = state.player;
@@ -7870,16 +7959,19 @@ a { color: var(--ember); }
     if (!need && idle < 3) return offers;
     if (offers.some(function (o) { return o.tier === 3 || o.tryout; }) && idle < 3) return offers;
 
+    var reach = marketReach(state, prof);
+    var start = startingRegionOf(state);
     var pool = (state.world.teams || []).filter(function (t) {
       return t && !t.hasPlayer && t.tier === 3 &&
-        (t.region === p.region || t.region === p.homeRegion);
+        (t.region === p.region || t.region === p.homeRegion || t.region === start);
     });
-    if (!pool.length) {
+    /* Solo si el reach ya no es regional: ampliar a otros T3. */
+    if (!pool.length && reach !== 'regional') {
       pool = (state.world.teams || []).filter(function (t) {
         return t && !t.hasPlayer && t.tier === 3;
       });
     }
-    if (!pool.length) {
+    if (!pool.length && reach === 'international') {
       pool = (state.world.teams || []).filter(function (t) {
         return t && !t.hasPlayer && t.tier >= 2;
       });
@@ -7917,11 +8009,22 @@ a { color: var(--ember); }
     var prof = ctx.profile || profile(state);
     var offers = [];
     var current = DCS.engine.world.getTeam(state, p.teamId);
+    var reachLevel = marketReach(state, prof);
+    var declineStreak = (state.career && state.career.declineStreak) || 0;
+    var neverSigned = !(p.teamsPlayed && p.teamsPlayed.length);
 
     var scored = [];
     (state.world.teams || []).forEach(function (team) {
       if (current && team.id === current.id) return;
       if (team.hasPlayer) return;
+
+      /* Reach regional: solo la región de entrada / actual. */
+      var sameReg = sameMarketRegion(state, team);
+      if (reachLevel === 'regional' && !sameReg) return;
+
+      /* Rookie sin firmar: no hay Tier 1 élite en el teléfono. */
+      if (neverSigned && team.tier === 1) return;
+      if ((p.proYears || 0) < 1 && team.tier === 1 && reachLevel === 'regional') return;
 
       /* 1. ¿hay hueco en tu puesto? Todos los rosters están llenos, así
          que casi siempre hay que discutirle el sitio a alguien: el
@@ -7946,13 +8049,16 @@ a { color: var(--ember); }
          pagarte, y deja de llamar. Por eso el mercado de cada jugador
          se concentra en su escalón, con algún tiro hacia arriba. */
       var over = prof.value - min;
-      var reach = over > 18 ? U.clamp(1 - (over - 18) / 45, 0.12, 1) : 1;
+      var valueReach = over > 18 ? U.clamp(1 - (over - 18) / 45, 0.12, 1) : 1;
 
       /* La excepción ya es improbable de por sí: si salta, el interés
          es real y no se vuelve a penalizar aquí. */
-      var interest = U.logistic(over, 8) * (fit / 100) * reach;
-      interest *= team.region === p.region || team.region === p.homeRegion
-        ? 1 : (prof.careerRep > 45 ? 0.55 : 0.18);
+      var interest = U.logistic(over, 8) * (fit / 100) * valueReach;
+      if (reachLevel === 'multi') {
+        interest *= sameReg ? 1 : 0.42;
+      } else if (reachLevel === 'international') {
+        interest *= sameReg ? 1 : (prof.careerRep > 45 ? 0.6 : 0.28);
+      }
       interest *= U.lerp(0.55, 1.25, U.norm(prof.form, 30, 78));
       interest *= U.lerp(0.85, 1.15, teamFit(state, team) / 100);
       /* las estructuras pequeñas viven de apostar por chavales */
@@ -7965,6 +8071,11 @@ a { color: var(--ember); }
       /* Rookie / skill bajo: no hay atajo a Tier 1 élite. */
       if (team.tier === 1 && (p.proYears || 0) < 2 && prof.value < 70) interest *= 0.05;
       if (team.tier === 1 && prof.form < 45 && prof.value < 75) interest *= 0.45;
+      /* Rechazar de más enfría el mercado: no mejora por insistir. */
+      if (declineStreak >= 1) {
+        interest *= Math.max(0.32, 1 - declineStreak * 0.16);
+        if (team.tier <= 2) interest *= 0.72;
+      }
       interest *= rng.range(0.7, 1.3);
       /* Suelo de interés: por debajo de esto el club ni descuelga. Es
          bajo a propósito, para que desde el fondo siempre quede una
@@ -7992,6 +8103,7 @@ a { color: var(--ember); }
     /* Con inactividad larga siempre queda al menos una llamada inferior. */
     if ((p.seasonsWithoutTeam || 0) >= 2) maxOffers = Math.max(maxOffers, 1);
     if ((p.seasonsWithoutTeam || 0) >= 3) maxOffers = Math.max(maxOffers, 2);
+    if (declineStreak >= 1) maxOffers = Math.max(0, maxOffers - Math.min(2, declineStreak));
 
     /* Se reparte por interés, no por orden estricto: el mercado de cada
        jugador se concentra en su escalón, pero deja hueco a la oferta
@@ -8001,7 +8113,12 @@ a { color: var(--ember); }
       var choice = rng.weighted(pool, function (s) { return s.interest; });
       if (!choice) break;
       pool.splice(pool.indexOf(choice), 1);
-      offers.push(buildOffer(state, rng, choice.team, prof, false, choice.why));
+      var built = buildOffer(state, rng, choice.team, prof, false, choice.why);
+      if (declineStreak >= 1) {
+        built.salary = Math.round(built.salary * Math.max(0.72, 1 - declineStreak * 0.08) / 500) * 500;
+        if (!built.note) built.note = 'El mercado se ha enfriado tras rechazos previos.';
+      }
+      offers.push(built);
     }
 
     /* Renovación del equipo actual: rendir mal también cuesta el sitio */
@@ -8083,6 +8200,7 @@ a { color: var(--ember); }
     if (!team) return false;
 
     var wasTeam = p.teamId;
+    var isDebut = !wasTeam && !(p.teamsPlayed && p.teamsPlayed.length);
     if (wasTeam && wasTeam !== team.id) {
       DCS.engine.world.leaveTeam(state, 'transfer');
       p.teamChanges++;
@@ -8111,6 +8229,27 @@ a { color: var(--ember); }
       team.synergy = U.clamp(team.synergy + 6, 15, 95);
       p.morale = U.clamp(p.morale + 3, 0, 100);
     }
+
+    state.career = state.career || {};
+    state.career.declineStreak = 0;
+    if (isDebut) {
+      state.career.startingTeamId = team.id;
+      if (!state.career.startingRegion) {
+        state.career.startingRegion = p.homeRegion || team.region;
+      }
+      if (team.tier === 2) {
+        p.flags = p.flags || {};
+        p.flags.provisional = true;
+      }
+      state.career.highlights = state.career.highlights || [];
+      state.career.highlights.push({
+        year: state.year,
+        age: p.age,
+        text: 'Primer contrato profesional · ' + team.name + ' · ' +
+          ((DCS.data.REGIONS[team.region] && DCS.data.REGIONS[team.region].name) || team.region) +
+          ' · Tier ' + team.tier
+      });
+    }
     return true;
   }
 
@@ -8126,10 +8265,12 @@ a { color: var(--ember); }
     recentForm: recentForm,
     careerReputation: careerReputation,
     generateOffers: generateOffers,
+    generateInitialOffers: generateInitialOffers,
     acceptOffer: acceptOffer,
     signDebut: signDebut,
     debutPool: debutPool,
     debutMaxTier: debutMaxTier,
+    marketReach: marketReach,
     ensureSafetyOffers: ensureSafetyOffers,
     minValueFor: minValueFor,
     isElite: isElite,
@@ -9260,6 +9401,8 @@ a { color: var(--ember); }
     };
 
     if (team) {
+      var stint = currentStint(state);
+      if (!stint || stint.teamId !== team.id) openStint(state, team);
       report.lines.push('Arranca el año con ' + team.name + ' (Tier ' + team.tier + ', ' +
         D.REGIONS[team.region].name + ').');
       report.lines.push('Objetivo del club: ' + (p.contract ? p.contract.expectation : team.expectation) + '.');
@@ -9269,9 +9412,11 @@ a { color: var(--ember); }
       report.plan = plan.map(function (e) { return e.name; });
       state.season.plan = plan;
     } else {
-      report.lines.push(p.age <= 17
-        ? 'Sin equipo. Grindeas pubs, entras en ligas amateur y esperas que alguien se fije en ti.'
-        : 'Sigues sin equipo. Pubs, tryouts y llamadas que no siempre se devuelven.');
+      report.lines.push(p.age <= 17 && !(p.teamsPlayed && p.teamsPlayed.length)
+        ? 'Agente libre. Compara las ofertas de tu región o espera: nadie te asigna un equipo.'
+        : (p.age <= 17
+          ? 'Sin equipo. Grindeas pubs, entras en ligas amateur y esperas que alguien se fije en ti.'
+          : 'Sigues sin equipo. Pubs, tryouts y llamadas que no siempre se devuelven.'));
       state.season.plan = [];
     }
 
@@ -9919,8 +10064,8 @@ a { color: var(--ember); }
     if (!state.season || state.season.phase === 'done') startSeason(state);
 
     var phase = state.season.phase;
-    /* el mercado es una decisión: no se cierra el año dejándolo sin responder */
-    if (phase === 'yearEnd' && state.offers && state.offers.length) {
+    /* Ofertas pendientes: hay que responder antes de seguir (debut o fin de año). */
+    if (state.offers && state.offers.length) {
       return { blocked: true, reason: 'offers', offers: state.offers.length };
     }
 
@@ -10049,8 +10194,10 @@ a { color: var(--ember); }
     DCS.engine.finance.init(state);
     state.career.acc = DCS.engine.stats.blank(state.player.role);
     state.world = DCS.engine.world.createWorld(rng);
-    /* Debut: la región elegida decide el pool; el tier de entrada es bajo. */
-    if (DCS.engine.market.signDebut) DCS.engine.market.signDebut(state, rng);
+    /* Empieza libre: la región fija el mercado de entrada, no el equipo. */
+    if (DCS.engine.market.generateInitialOffers) {
+      DCS.engine.market.generateInitialOffers(state, rng);
+    }
     DCS.engine.season.startSeason(state);
 
     save(state);
@@ -10212,6 +10359,8 @@ a { color: var(--ember); }
     if (!state.eventLog) state.eventLog = [];
     if (!state.usedEvents) state.usedEvents = {};
     if (state.career && !state.career.highlights) state.career.highlights = [];
+    if (state.career && typeof state.career.declineStreak !== 'number') state.career.declineStreak = 0;
+    if (state.career && typeof state.career.declinedOffers !== 'number') state.career.declinedOffers = 0;
     if (state.player) {
       if (typeof state.player.seasonsWithoutTeam !== 'number') state.player.seasonsWithoutTeam = 0;
       if (!state.player.homeRegion) state.player.homeRegion = state.player.region;
@@ -10372,6 +10521,12 @@ a { color: var(--ember); }
 
     declineOffers: function () {
       var s = game.state;
+      s.career = s.career || {};
+      var n = (s.offers || []).length;
+      if (n) {
+        s.career.declinedOffers = (s.career.declinedOffers || 0) + n;
+        s.career.declineStreak = (s.career.declineStreak || 0) + 1;
+      }
       s.offers = [];
       game.persist();
       return true;
@@ -11472,11 +11627,21 @@ a { color: var(--ember); }
           (p.isCaptain ? '<div class="kv"><span>Rol interno</span><span>Capitán</span></div>' : '')
       });
     } else {
+      var debutPending = state.offers && state.offers.length && !(p.teamsPlayed && p.teamsPlayed.length);
       contract = c.card({
-        title: 'Situación contractual',
-        body: '<p class="muted small">Eres agente libre. Sin equipo no hay mapas oficiales: ' +
-          'grindeas pubs y esperas que alguien se fije en ti en el mercado.</p>' +
-          '<div class="kv"><span>Temporadas sin equipo</span><span>' + p.seasonsWithoutTeam + '</span></div>'
+        title: debutPending ? 'Mercado de debut' : 'Situación contractual',
+        body: (debutPending
+          ? '<p class="muted small">Eres agente libre. Tu región fija el mercado de entrada: ' +
+            'compara contratos y firma el primero cuando quieras. Nadie te asigna un equipo.</p>' +
+            c.btn('Ver ofertas de debut', 'nav', { value: 'offers', variant: 'primary' })
+          : '<p class="muted small">Eres agente libre. Sin equipo no hay mapas oficiales: ' +
+            'grindeas pubs y esperas que alguien se fije en ti en el mercado.</p>') +
+          '<div class="kv"><span>Temporadas sin equipo</span><span>' + p.seasonsWithoutTeam + '</span></div>' +
+          (state.career && state.career.startingRegion
+            ? '<div class="kv"><span>Región de entrada</span><span>' +
+              c.esc((D.REGIONS[state.career.startingRegion] && D.REGIONS[state.career.startingRegion].name) ||
+                state.career.startingRegion) + '</span></div>'
+            : '')
       });
     }
 
@@ -12577,20 +12742,28 @@ a { color: var(--ember); }
   S.offers = function (state) {
     var offers = state.offers || [];
     var p = state.player;
+    var debutMarket = !p.teamId && !(p.teamsPlayed && p.teamsPlayed.length);
     if (!offers.length) {
       return '<div class="page-head"><div><h2>Mercado</h2><div class="sub">Sin ofertas activas</div></div></div>' +
         marketStatusCard(state) +
         c.card({
           title: 'Nada sobre la mesa',
-          body: '<p class="muted">No tienes ofertas pendientes ahora mismo. El mercado se abre al cerrar cada temporada.</p>'
+          body: '<p class="muted">' + (debutMarket
+            ? 'No hay ofertas ahora. Puedes avanzar la temporada como agente libre y esperar otra ventana de mercado.'
+            : 'No tienes ofertas pendientes ahora mismo. El mercado se abre al cerrar cada temporada.') + '</p>'
         });
     }
 
     var bestTier = Math.min.apply(null, offers.map(function (o) { return o.tier; }));
 
     var html = '<div class="page-head"><div><h2>Mercado</h2><div class="sub">' + offers.length +
-      ' oferta' + (offers.length > 1 ? 's' : '') + ' · decide antes de cerrar el año</div></div>' +
-      '<div class="head-right">' + c.badge('No siempre gana el mejor equipo', 'muted') + '</div></div>';
+      ' oferta' + (offers.length > 1 ? 's' : '') +
+      (debutMarket
+        ? ' de debut · elige dónde empezar tu carrera'
+        : ' · decide antes de seguir') + '</div></div>' +
+      '<div class="head-right">' +
+      c.badge(debutMarket ? 'Agente libre' : 'No siempre gana el mejor equipo',
+        debutMarket ? 'gold' : 'muted') + '</div></div>';
 
     html += marketStatusCard(state);
 
@@ -12602,6 +12775,7 @@ a { color: var(--ember); }
         '<div class="offer-head">' + c.teamMark({ id: o.teamId, name: o.teamName }, 'md') +
         c.tierBadge(o.tier) + c.badge(D.REGIONS[o.region].short) +
         (o.isRenewal ? c.badge('Renovación', 'good') : '') +
+        (o.debut ? c.badge('Debut', 'info') : '') +
         (roleChanged ? c.badge('Cambio de rol', 'gold') : '') +
         (o.proveIt ? c.badge('A prueba', 'info') : '') +
         (o.tryout ? c.badge('Tryout', 'gold') : '') + '</div>' +
@@ -12624,9 +12798,11 @@ a { color: var(--ember); }
     }).join('');
 
     html += c.card({
-      title: 'Rechazar todo',
-      body: '<p class="small muted">Puedes quedarte donde estás o seguir libre esperando algo mejor. ' +
-        'No siempre llega.</p>' + c.btn('Rechazar todas las ofertas', 'decline-offers', { variant: 'danger' })
+      title: debutMarket ? 'Rechazar y seguir libre' : 'Rechazar todo',
+      body: '<p class="small muted">' + (debutMarket
+        ? 'Nadie te asigna un club. Si rechazas todas, sigues sin equipo. Las siguientes llamadas no tienen por qué ser mejores.'
+        : 'Puedes quedarte donde estás o seguir libre esperando algo mejor. No siempre llega.') +
+        '</p>' + c.btn('Rechazar todas las ofertas', 'decline-offers', { variant: 'danger' })
     });
     return html;
   };
@@ -13277,7 +13453,11 @@ a { color: var(--ember); }
             region: d.region, role: d.role, archetype: d.archetype
           });
           app.openYear = null; app.openTourn = null;
-          app.go('dashboard');
+          if (DCS.game.state && DCS.game.state.offers && DCS.game.state.offers.length) {
+            app.go('offers');
+          } else {
+            app.go('dashboard');
+          }
           return;
         }
 
