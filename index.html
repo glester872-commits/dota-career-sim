@@ -8062,9 +8062,294 @@ a { color: var(--ember); }
     });
   }
 
+  /* ============================================================
+     MERCADO FREE AGENT — reloj, caducidad, esperar, cooldowns
+     ------------------------------------------------------------
+     No es un reroll: Esperar avanza el tiempo y el mercado reacciona.
+     ============================================================ */
+
+  function ensureFaMarket(state) {
+    state.faMarket = state.faMarket || {};
+    var fa = state.faMarket;
+    if (typeof fa.day !== 'number') fa.day = 1;
+    if (typeof fa.daysIdle !== 'number') fa.daysIdle = 0;
+    if (typeof fa.waitCount !== 'number') fa.waitCount = 0;
+    if (!fa.cooldowns || typeof fa.cooldowns !== 'object') fa.cooldowns = {};
+    if (typeof fa.momentum !== 'number') fa.momentum = 1;
+    return fa;
+  }
+
+  function offerValidityDays(team, rng, opts) {
+    opts = opts || {};
+    if (opts.tryout) return rng.int(5, 10);
+    if (team.tier === 1) return rng.int(5, 10);
+    if (team.tier === 2) return rng.int(7, 14);
+    return rng.int(12, 21);
+  }
+
+  function stampOfferExpiry(state, offer, rng, team) {
+    var fa = ensureFaMarket(state);
+    var days = offerValidityDays(team || { tier: offer.tier }, rng, {
+      tryout: !!offer.tryout
+    });
+    offer.validDays = days;
+    offer.expiresAt = fa.day + days;
+    return offer;
+  }
+
+  function offerDaysLeft(state, offer) {
+    if (!offer || typeof offer.expiresAt !== 'number') return null;
+    var fa = ensureFaMarket(state);
+    return Math.max(0, offer.expiresAt - fa.day);
+  }
+
+  function isOfferExpired(state, offer) {
+    var left = offerDaysLeft(state, offer);
+    return left !== null && left <= 0;
+  }
+
+  function setTeamCooldown(state, teamId, days) {
+    var fa = ensureFaMarket(state);
+    var until = fa.day + Math.max(1, days || 21);
+    var prev = fa.cooldowns[teamId] || 0;
+    fa.cooldowns[teamId] = Math.max(prev, until);
+  }
+
+  function isTeamOnCooldown(state, teamId) {
+    var fa = ensureFaMarket(state);
+    return (fa.cooldowns[teamId] || 0) > fa.day;
+  }
+
+  function pruneExpiredOffers(state) {
+    var before = state.offers || [];
+    var kept = [];
+    var n = 0;
+    before.forEach(function (o) {
+      if (isOfferExpired(state, o)) n++;
+      else kept.push(o);
+    });
+    state.offers = kept;
+    return n;
+  }
+
+  function pushMarketHighlight(state, text) {
+    state.career = state.career || {};
+    state.career.highlights = state.career.highlights || [];
+    state.career.highlights.push({ year: state.year, text: text });
+    if (state.career.highlights.length > 40) {
+      state.career.highlights = state.career.highlights.slice(-40);
+    }
+  }
+
+  /**
+   * Nuevas llamadas mientras eres free agent.
+   * Respeta región/reach, cooldowns y techo de tier.
+   */
+  function spawnFreeAgentOffers(state, rng, prof, opts) {
+    opts = opts || {};
+    var p = state.player;
+    var fa = ensureFaMarket(state);
+    var maxNew = typeof opts.maxNew === 'number' ? opts.maxNew : 2;
+    if (maxNew <= 0) return [];
+    var exclude = {};
+    (opts.excludeIds || []).forEach(function (id) { exclude[id] = true; });
+    (state.offers || []).forEach(function (o) { exclude[o.teamId] = true; });
+
+    var reach = marketReach(state, prof);
+    var neverSigned = !(p.teamsPlayed && p.teamsPlayed.length);
+    var maxTier = neverSigned ? debutMaxTier(p) : 1;
+    if (fa.waitCount >= 3 && maxTier === 3) {
+      /* Tras varias esperas, T2 regional puede mirar si hay hueco. */
+      if (rng.chance(0.35)) maxTier = 2;
+    }
+    var preferTryout = !!opts.preferTryout || fa.daysIdle >= 42 || fa.waitCount >= 4;
+
+    var scored = [];
+    (state.world.teams || []).forEach(function (team) {
+      if (!team || team.hasPlayer || exclude[team.id]) return;
+      if (isTeamOnCooldown(state, team.id)) return;
+      var sameReg = sameMarketRegion(state, team);
+      if (reach === 'regional' && !sameReg) return;
+      if (neverSigned && team.tier === 1) return;
+      if (neverSigned && maxTier === 3 && team.tier < 3) return;
+      if (neverSigned && maxTier === 2 && team.tier === 1) return;
+
+      var fit = roleFit(state, team);
+      if (fit < 10) return;
+      var min = minValueFor(state, team, prof);
+      var why = null;
+      if (prof.value < min - (preferTryout ? 8 : 0)) {
+        why = exception(state, rng, team, prof, min - prof.value, fit);
+        if (!why && !(preferTryout && team.tier === 3)) return;
+      }
+      if (isElite(state, team, prof) && !eliteGate(prof)) return;
+
+      var over = prof.value - min;
+      var interest = U.logistic(over, 8) * (fit / 100);
+      interest *= sameReg ? 1 : (reach === 'multi' ? 0.4 : 0.55);
+      interest *= fa.momentum || 1;
+      interest *= U.lerp(0.7, 1.2, U.norm(prof.potential, 55, 95));
+      if (team.tier === 3) interest *= 1.2 + Math.min(0.5, fa.waitCount * 0.08);
+      if (team.tier === 2) interest *= Math.max(0.35, 0.9 - fa.waitCount * 0.08);
+      if (team.tier === 1) interest *= 0.15;
+      interest *= rng.range(0.75, 1.25);
+      if (interest > 0.05) scored.push({ team: team, interest: interest, why: why });
+    });
+
+    scored.sort(function (a, b) { return b.interest - a.interest; });
+    if (!scored.length) return [];
+
+    var out = [];
+    var bag = scored.slice();
+    for (var n = 0; n < maxNew && bag.length; n++) {
+      var choice = rng.weighted(bag, function (s) { return s.interest; });
+      if (!choice) break;
+      bag.splice(bag.indexOf(choice), 1);
+      var team = choice.team;
+      var tryout = preferTryout && team.tier >= 2 && rng.chance(0.55);
+      if (preferTryout && team.tier === 3 && !out.length && rng.chance(0.4)) tryout = true;
+      var offer = buildOffer(state, rng, team, prof, false,
+        tryout ? 'Tryout: un torneo para demostrar' : (choice.why || 'Nuevo interés del mercado'));
+      if (tryout) {
+        offer.tryout = true;
+        offer.proveIt = true;
+        offer.years = 1;
+        offer.salary = Math.min(offer.salary, salaryFor(state, team, prof, rng, { years: 1, proveIt: true }));
+        offer.note = 'Tryout / contrato corto. Rendir abre la puerta; fallar te devuelve al mercado.';
+      }
+      /* Esperar mucho enfría salarios de las nuevas llamadas. */
+      if (fa.waitCount >= 2) {
+        offer.salary = Math.round(offer.salary * Math.max(0.72, 1 - fa.waitCount * 0.05) / 500) * 500;
+      }
+      stampOfferExpiry(state, offer, rng, team);
+      out.push(offer);
+    }
+    return out;
+  }
+
+  /**
+   * ESPERAR: avanza 2–4 semanas. El mercado evoluciona; no es un reroll.
+   */
+  function waitFreeAgentMarket(state, rng) {
+    var p = state.player;
+    if (!p || p.teamId) return { ok: false, reason: 'signed' };
+    var fa = ensureFaMarket(state);
+    var days = rng.int(14, 28);
+    var waits = (fa.waitCount || 0) + 1;
+
+    fa.day += days;
+    fa.waitCount = waits;
+    fa.daysIdle = (fa.daysIdle || 0) + days;
+    fa.momentum = U.clamp(1 - waits * 0.08, 0.35, 1);
+
+    /* Penalización progresiva suave: no brutal en las primeras semanas. */
+    if (waits >= 2) {
+      p.form = U.clamp(p.form - rng.range(0.4, 1.6), 18, 100);
+    }
+    if (waits >= 3) {
+      p.reputation = U.clamp((p.reputation || 0) - rng.range(0.3, 1.1), 0, 100);
+      if (p.flags) p.flags.marketBuzz = U.clamp((p.flags.marketBuzz || 0) - 1, -12, 20);
+    }
+
+    var expired = 0;
+    var withdrawn = 0;
+    var improved = 0;
+    var worsened = 0;
+    var surviving = [];
+
+    (state.offers || []).forEach(function (o) {
+      if (isOfferExpired(state, o)) { expired++; return; }
+      var withdrawChance = 0.10 + waits * 0.055;
+      if (o.tier <= 2) withdrawChance += 0.07;
+      if (o.debut) withdrawChance += 0.04;
+      if (rng.chance(U.clamp(withdrawChance, 0.08, 0.52))) {
+        withdrawn++;
+        setTeamCooldown(state, o.teamId, rng.int(21, 49));
+        return;
+      }
+      if (rng.chance(0.38)) {
+        if (rng.chance(Math.max(0.18, 0.48 - waits * 0.06))) {
+          o.salary = Math.round(o.salary * rng.range(1.03, 1.09) / 500) * 500;
+          if (typeof o.expiresAt === 'number') o.expiresAt += rng.int(2, 5);
+          improved++;
+        } else {
+          o.salary = Math.round(o.salary * rng.range(0.86, 0.96) / 500) * 500;
+          if (o.years > 1 && rng.chance(0.35)) o.years = 1;
+          worsened++;
+        }
+      }
+      surviving.push(o);
+    });
+    state.offers = surviving;
+
+    var prof = profile(state);
+    var wantNew = 0;
+    if (surviving.length === 0) wantNew = rng.int(0, 2);
+    else if (rng.chance(0.55)) wantNew = rng.int(0, 2);
+    if (waits >= 3 && surviving.length <= 1) wantNew = Math.max(wantNew, rng.chance(0.6) ? 1 : 0);
+    if (waits >= 5 && surviving.length === 0) wantNew = Math.max(wantNew, 1);
+
+    var spawned = spawnFreeAgentOffers(state, rng, prof, {
+      maxNew: wantNew,
+      excludeIds: surviving.map(function (o) { return o.teamId; }),
+      preferTryout: waits >= 3 || (surviving.length === 0 && waits >= 2)
+    });
+    spawned.forEach(function (o) { state.offers.push(o); });
+
+    /* Red de seguridad: tras muchas esperas, al menos una puerta inferior. */
+    if (!state.offers.length && waits >= 3) {
+      state.offers = ensureSafetyOffers(state, rng, prof, state.offers);
+      state.offers.forEach(function (o) {
+        if (typeof o.expiresAt !== 'number') stampOfferExpiry(state, o, rng, { tier: o.tier });
+      });
+    }
+
+    state.offers.sort(function (a, b) {
+      return a.tier - b.tier || b.salary - a.salary;
+    });
+
+    var report = {
+      ok: true,
+      type: 'faWait',
+      days: days,
+      weeks: Math.max(2, Math.round(days / 7)),
+      expired: expired,
+      withdrawn: withdrawn,
+      improved: improved,
+      worsened: worsened,
+      newCount: spawned.length,
+      active: state.offers.length
+    };
+    fa.lastReport = report;
+    return report;
+  }
+
+  function rejectOffer(state, offerId) {
+    var list = state.offers || [];
+    var idx = -1;
+    var offer = null;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === offerId) { idx = i; offer = list[i]; break; }
+    }
+    if (!offer) return false;
+    if (isOfferExpired(state, offer)) {
+      list.splice(idx, 1);
+      state.offers = list;
+      return true;
+    }
+    list.splice(idx, 1);
+    state.offers = list;
+    setTeamCooldown(state, offer.teamId, 28 + Math.min(21, (ensureFaMarket(state).waitCount || 0) * 7));
+    state.career = state.career || {};
+    state.career.declinedOffers = (state.career.declinedOffers || 0) + 1;
+    state.career.declineStreak = (state.career.declineStreak || 0) + 1;
+    pushMarketHighlight(state, 'Rechazaste una oferta de ' + offer.teamName + '.');
+    return true;
+  }
+
   /**
    * Ofertas de debut: el jugador empieza libre y elige.
-   * Solo equipos de startingRegion; 2–5 contratos distintos.
+   * Solo equipos de startingRegion; 1–4 contratos distintos.
    * No asigna equipo ni startingTeamId.
    */
   function generateInitialOffers(state, rng) {
@@ -8110,13 +8395,12 @@ a { color: var(--ember); }
       });
     }
 
-    var want = 2;
-    if (scored.length >= 3) want = 3;
-    if (scored.length >= 4 && (prof.potential >= 78 || (prof.demand && prof.demand.index >= 2))) want = 4;
-    if (scored.length >= 5 && prof.potential >= 88 && rng.chance(0.4)) want = 5;
+    var want = 1;
+    if (scored.length >= 2) want = 2;
+    if (scored.length >= 3 && (prof.potential >= 70 || (prof.demand && prof.demand.index >= 1))) want = 3;
+    if (scored.length >= 4 && (prof.potential >= 82 || (prof.demand && prof.demand.index >= 2)) && rng.chance(0.55)) want = 4;
     want = Math.min(want, scored.length);
-    if (scored.length >= 2) want = Math.max(2, want);
-    else want = scored.length;
+    if (!scored.length) want = 0;
 
     var offers = [];
     var bag = scored.slice();
@@ -8146,13 +8430,18 @@ a { color: var(--ember); }
           ? 'Te ven con margen: contrato de debut en Tier 2 regional.'
           : 'Contrato de debut. Compara y elige dónde empezar.';
       }
+      stampOfferExpiry(state, offer, rng, team);
       offers.push(offer);
     }
 
     offers.sort(function (a, b) {
       return a.tier - b.tier || b.salary - a.salary;
     });
+    ensureFaMarket(state);
     state.offers = offers;
+    if (!(p.teamsPlayed && p.teamsPlayed.length)) {
+      pushMarketHighlight(state, 'Entraste al mercado profesional como Free Agent.');
+    }
     return offers;
   }
 
@@ -8213,6 +8502,7 @@ a { color: var(--ember); }
       : (idle >= 2
         ? 'Tryout / contrato corto de recuperación en Tier 3. Rendir bien puede abrir algo mejor.'
         : (offer.note || 'Contrato corto para volver a competir.'));
+    stampOfferExpiry(state, offer, rng, team);
     offers.push(offer);
     return offers;
   }
@@ -8235,6 +8525,7 @@ a { color: var(--ember); }
     (state.world.teams || []).forEach(function (team) {
       if (current && team.id === current.id) return;
       if (team.hasPlayer) return;
+      if (isTeamOnCooldown(state, team.id)) return;
 
       /* Reach regional: solo la región de entrada / actual. */
       var sameReg = sameMarketRegion(state, team);
@@ -8336,6 +8627,7 @@ a { color: var(--ember); }
         built.salary = Math.round(built.salary * Math.max(0.72, 1 - declineStreak * 0.08) / 500) * 500;
         if (!built.note) built.note = 'El mercado se ha enfriado tras rechazos previos.';
       }
+      if (!built.isRenewal) stampOfferExpiry(state, built, rng, choice.team);
       offers.push(built);
     }
 
@@ -8416,6 +8708,7 @@ a { color: var(--ember); }
     var rng = DCS.runtime.get();
     var team = DCS.engine.world.getTeam(state, offer.teamId);
     if (!team) return false;
+    if (isOfferExpired(state, offer)) return false;
 
     var wasTeam = p.teamId;
     var isDebut = !wasTeam && !(p.teamsPlayed && p.teamsPlayed.length);
@@ -8450,6 +8743,12 @@ a { color: var(--ember); }
 
     state.career = state.career || {};
     state.career.declineStreak = 0;
+    if (state.faMarket) {
+      state.faMarket.daysIdle = 0;
+      state.faMarket.waitCount = 0;
+      state.faMarket.momentum = 1;
+      state.faMarket.lastReport = null;
+    }
     if (isDebut) {
       state.career.startingTeamId = team.id;
       if (!state.career.startingRegion) {
@@ -8485,6 +8784,11 @@ a { color: var(--ember); }
     generateOffers: generateOffers,
     generateInitialOffers: generateInitialOffers,
     acceptOffer: acceptOffer,
+    rejectOffer: rejectOffer,
+    waitFreeAgentMarket: waitFreeAgentMarket,
+    offerDaysLeft: offerDaysLeft,
+    isOfferExpired: isOfferExpired,
+    ensureFaMarket: ensureFaMarket,
     signDebut: signDebut,
     debutPool: debutPool,
     debutMaxTier: debutMaxTier,
@@ -10413,6 +10717,7 @@ a { color: var(--ember); }
     state.career.acc = DCS.engine.stats.blank(state.player.role);
     state.world = DCS.engine.world.createWorld(rng);
     /* Empieza libre: la región fija el mercado de entrada, no el equipo. */
+    if (DCS.engine.market.ensureFaMarket) DCS.engine.market.ensureFaMarket(state);
     if (DCS.engine.market.generateInitialOffers) {
       DCS.engine.market.generateInitialOffers(state, rng);
     }
@@ -10579,6 +10884,14 @@ a { color: var(--ember); }
     if (state.career && !state.career.highlights) state.career.highlights = [];
     if (state.career && typeof state.career.declineStreak !== 'number') state.career.declineStreak = 0;
     if (state.career && typeof state.career.declinedOffers !== 'number') state.career.declinedOffers = 0;
+    if (DCS.engine.market && DCS.engine.market.ensureFaMarket) {
+      DCS.engine.market.ensureFaMarket(state);
+      if (DCS.engine.market.offerDaysLeft && state.offers) {
+        state.offers = state.offers.filter(function (o) {
+          return !DCS.engine.market.isOfferExpired(state, o);
+        });
+      }
+    }
     if (state.player) {
       if (typeof state.player.seasonsWithoutTeam !== 'number') state.player.seasonsWithoutTeam = 0;
       if (!state.player.homeRegion) state.player.homeRegion = state.player.region;
@@ -10727,6 +11040,11 @@ a { color: var(--ember); }
       var offer = null;
       for (var i = 0; i < s.offers.length; i++) if (s.offers[i].id === offerId) offer = s.offers[i];
       if (!offer) return false;
+      if (DCS.engine.market.isOfferExpired && DCS.engine.market.isOfferExpired(s, offer)) {
+        s.offers = (s.offers || []).filter(function (o) { return o.id !== offerId; });
+        game.persist();
+        return false;
+      }
       var ok = DCS.engine.market.acceptOffer(s, offer);
       if (ok) {
         s.offers = [];
@@ -10737,15 +11055,37 @@ a { color: var(--ember); }
       return ok;
     },
 
+    rejectOffer: function (offerId) {
+      var s = game.state;
+      if (!DCS.engine.market.rejectOffer) return false;
+      var ok = DCS.engine.market.rejectOffer(s, offerId);
+      if (ok) game.persist();
+      return ok;
+    },
+
+    waitOffers: function () {
+      var s = game.state;
+      if (!s || s.player.teamId) return { ok: false, reason: 'signed' };
+      var rng = DCS.runtime.get();
+      var report = DCS.engine.market.waitFreeAgentMarket(s, rng);
+      game.persist();
+      return report;
+    },
+
     declineOffers: function () {
       var s = game.state;
-      s.career = s.career || {};
-      var n = (s.offers || []).length;
-      if (n) {
-        s.career.declinedOffers = (s.career.declinedOffers || 0) + n;
-        s.career.declineStreak = (s.career.declineStreak || 0) + 1;
+      var list = (s.offers || []).slice();
+      if (DCS.engine.market.rejectOffer) {
+        list.forEach(function (o) { DCS.engine.market.rejectOffer(s, o.id); });
+      } else {
+        s.career = s.career || {};
+        var n = list.length;
+        if (n) {
+          s.career.declinedOffers = (s.career.declinedOffers || 0) + n;
+          s.career.declineStreak = (s.career.declineStreak || 0) + 1;
+        }
+        s.offers = [];
       }
-      s.offers = [];
       game.persist();
       return true;
     },
@@ -13024,37 +13364,100 @@ a { color: var(--ember); }
     });
   }
 
+  function faStatusCard(state) {
+    var p = state.player;
+    if (p.teamId) return '';
+    var fa = (DCS.engine.market.ensureFaMarket && DCS.engine.market.ensureFaMarket(state)) || state.faMarket || {};
+    var prof = DCS.engine.market.profile(state);
+    var dem = DEMAND_TEXT[prof.demand.level] || DEMAND_TEXT.LOW;
+    var regionId = (state.career && state.career.startingRegion) || p.homeRegion || p.region;
+    var regionName = (D.REGIONS[regionId] && D.REGIONS[regionId].name) || regionId;
+    var weeks = Math.floor((fa.daysIdle || 0) / 7);
+    var reach = DCS.engine.market.marketReach ? DCS.engine.market.marketReach(state, prof) : 'regional';
+    var reachLabel = reach === 'international' ? 'Internacional' : (reach === 'multi' ? 'Multi-región' : 'Regional');
+    return c.card({
+      title: 'Free Agent',
+      meta: c.badge('Interés ' + dem[0], prof.demand.index >= 2 ? 'good' : (prof.demand.index === 0 ? 'bad' : 'muted')),
+      body: '<div class="kv"><span>Región</span><span>' + c.esc(regionName) + '</span></div>' +
+        '<div class="kv"><span>Alcance del mercado</span><span>' + c.esc(reachLabel) + '</span></div>' +
+        '<div class="kv"><span>Ofertas activas</span><span>' + ((state.offers || []).length) + '</span></div>' +
+        '<div class="kv"><span>Tiempo sin equipo</span><span>' +
+        (weeks <= 0 ? 'Recién llegado' : (weeks + (weeks === 1 ? ' semana' : ' semanas'))) +
+        '</span></div>' +
+        c.attrRow('Interés del mercado', (prof.demand.index + 1) * 25)
+    });
+  }
+
+  function faWaitReportCard(state) {
+    var fa = state.faMarket;
+    if (!fa || !fa.lastReport || !fa.lastReport.ok) return '';
+    var r = fa.lastReport;
+    var lines = [];
+    if (r.expired) lines.push(r.expired + (r.expired === 1 ? ' oferta ha expirado.' : ' ofertas han expirado.'));
+    if (r.withdrawn) lines.push(r.withdrawn + (r.withdrawn === 1 ? ' organización retiró su interés.' : ' organizaciones retiraron su interés.'));
+    if (r.improved) lines.push(r.improved + (r.improved === 1 ? ' oferta mejoró ligeramente.' : ' ofertas mejoraron ligeramente.'));
+    if (r.worsened) lines.push(r.worsened + (r.worsened === 1 ? ' oferta empeoró.' : ' ofertas empeoraron.'));
+    if (r.newCount) lines.push(r.newCount + (r.newCount === 1 ? ' nuevo equipo está interesado.' : ' nuevos equipos están interesados.'));
+    if (!lines.length) {
+      lines.push('No han llegado nuevas ofertas.');
+      lines.push('El mercado para tu posición está tranquilo.');
+    }
+    return c.card({
+      title: 'Han pasado ' + r.weeks + (r.weeks === 1 ? ' semana' : ' semanas'),
+      subtitle: 'El mercado de fichajes continúa moviéndose.',
+      meta: c.badge((r.active || 0) + ' activas', r.active ? 'gold' : 'muted'),
+      body: '<ul class="lines">' + lines.map(function (t) { return '<li>' + c.esc(t) + '</li>'; }).join('') + '</ul>'
+    });
+  }
+
   S.offers = function (state) {
     var offers = state.offers || [];
     var p = state.player;
-    var debutMarket = !p.teamId && !(p.teamsPlayed && p.teamsPlayed.length);
+    var freeAgent = !p.teamId;
+    var debutMarket = freeAgent && !(p.teamsPlayed && p.teamsPlayed.length);
+    var mkt = DCS.engine.market;
+
+    var html = '<div class="page-head"><div><h2>Mercado</h2><div class="sub">' +
+      (freeAgent
+        ? (offers.length
+          ? (offers.length + ' oferta' + (offers.length > 1 ? 's' : '') +
+            (debutMarket ? ' · firma o espera' : ' · decide tu próximo movimiento'))
+          : 'Sin ofertas activas · puedes esperar')
+        : (offers.length
+          ? offers.length + ' oferta' + (offers.length > 1 ? 's' : '') + ' · decide antes de seguir'
+          : 'Sin ofertas activas')) +
+      '</div></div>' +
+      '<div class="head-right">' +
+      c.badge(freeAgent ? 'Agente libre' : 'No siempre gana el mejor equipo',
+        freeAgent ? 'gold' : 'muted') + '</div></div>';
+
+    if (freeAgent) {
+      html += faStatusCard(state);
+      html += faWaitReportCard(state);
+    } else {
+      html += marketStatusCard(state);
+    }
+
     if (!offers.length) {
-      return '<div class="page-head"><div><h2>Mercado</h2><div class="sub">Sin ofertas activas</div></div></div>' +
-        marketStatusCard(state) +
-        c.card({
-          title: 'Nada sobre la mesa',
-          body: '<p class="muted">' + (debutMarket
-            ? 'No hay ofertas ahora. Puedes avanzar la temporada como agente libre y esperar otra ventana de mercado.'
-            : 'No tienes ofertas pendientes ahora mismo. El mercado se abre al cerrar cada temporada.') + '</p>'
-        });
+      html += c.card({
+        title: freeAgent ? 'Free Agent' : 'Nada sobre la mesa',
+        body: '<p class="muted">' + (freeAgent
+          ? 'No tienes ofertas activas. El interés del mercado puede cambiar si esperas: no garantiza nada mejor.'
+          : 'No tienes ofertas pendientes ahora mismo. El mercado se abre al cerrar cada temporada.') + '</p>' +
+          (freeAgent
+            ? '<div class="mt">' + c.btn('Esperar', 'wait-offers', { variant: 'primary' }) + '</div>'
+            : '')
+      });
+      return html;
     }
 
     var bestTier = Math.min.apply(null, offers.map(function (o) { return o.tier; }));
 
-    var html = '<div class="page-head"><div><h2>Mercado</h2><div class="sub">' + offers.length +
-      ' oferta' + (offers.length > 1 ? 's' : '') +
-      (debutMarket
-        ? ' de debut · elige dónde empezar tu carrera'
-        : ' · decide antes de seguir') + '</div></div>' +
-      '<div class="head-right">' +
-      c.badge(debutMarket ? 'Agente libre' : 'No siempre gana el mejor equipo',
-        debutMarket ? 'gold' : 'muted') + '</div></div>';
-
-    html += marketStatusCard(state);
-
     html += offers.map(function (o, i) {
       var roleChanged = o.role !== p.role;
       var top = o.tier === bestTier;
+      var left = mkt.offerDaysLeft ? mkt.offerDaysLeft(state, o) : null;
+      var monthPay = Math.round((o.salary || 0) / 12);
       return '<div class="' + c.cls(['offer', 'reveal', o.isRenewal ? 'renewal' : '', top && !o.isRenewal ? 'top' : '']) +
         '" style="animation-delay:' + (i * 70) + 'ms">' +
         '<div class="offer-head">' + c.teamMark({ id: o.teamId, name: o.teamName }, 'md') +
@@ -13063,11 +13466,13 @@ a { color: var(--ember); }
         (o.debut ? c.badge('Debut', 'info') : '') +
         (roleChanged ? c.badge('Cambio de rol', 'gold') : '') +
         (o.proveIt ? c.badge('A prueba', 'info') : '') +
-        (o.tryout ? c.badge('Tryout', 'gold') : '') + '</div>' +
+        (o.tryout ? c.badge('Tryout', 'gold') : '') +
+        (left !== null ? c.badge('Expira en ' + left + 'd', left <= 7 ? 'bad' : 'muted') : '') +
+        '</div>' +
         c.tiles([
           c.tile('Rol', D.ROLES[o.role].short, D.ROLES[o.role].name),
           c.tile('Duración', o.years + (o.years === 1 ? ' año' : ' años')),
-          c.tile('Salario', fmt.money(o.salary), 'por temporada', 'gold', { v: o.salary, fmt: 'money' }),
+          c.tile('Salario', fmt.money(monthPay), '/ mes · ' + fmt.money(o.salary) + ' temp.', 'gold'),
           c.tile('Premios', Math.round((o.prizeShare || D.DEFAULT_PRIZE_SHARE) * 100) + '%',
             'del premio del equipo'),
           c.tile('Nivel del roster', o.rosterLevel),
@@ -13075,20 +13480,34 @@ a { color: var(--ember); }
         ]) +
         '<div class="mt"><div class="kv"><span>Expectativa</span><span>' + c.esc(o.expectation) + '</span></div>' +
         '<div class="kv"><span>Perspectiva competitiva</span><span>' + c.esc(o.odds) + '</span></div>' +
+        (left !== null
+          ? '<div class="kv"><span>Oferta válida</span><span>' + left + (left === 1 ? ' día' : ' días') + '</span></div>'
+          : '') +
         bonusRows(o.bonuses) + '</div>' +
         (o.note ? '<p class="note">' + c.esc(o.note) + '</p>' : '') +
         '<div class="offer-actions">' +
-        c.btn('Aceptar y firmar', 'accept-offer', { value: o.id, variant: top ? 'primary' : undefined }) +
+        c.btn('Aceptar', 'accept-offer', { value: o.id, variant: top ? 'primary' : undefined }) +
+        (freeAgent || !o.isRenewal
+          ? c.btn('Rechazar', 'reject-offer', { value: o.id, variant: 'ghost' })
+          : '') +
         '</div></div>';
     }).join('');
 
-    html += c.card({
-      title: debutMarket ? 'Rechazar y seguir libre' : 'Rechazar todo',
-      body: '<p class="small muted">' + (debutMarket
-        ? 'Nadie te asigna un club. Si rechazas todas, sigues sin equipo. Las siguientes llamadas no tienen por qué ser mejores.'
-        : 'Puedes quedarte donde estás o seguir libre esperando algo mejor. No siempre llega.') +
-        '</p>' + c.btn('Rechazar todas las ofertas', 'decline-offers', { variant: 'danger' })
-    });
+    if (freeAgent) {
+      html += c.card({
+        title: 'Esperar',
+        body: '<p class="small muted">Pasan 2–4 semanas. Las ofertas pueden caducar, retirarse, cambiar o aparecer otras. ' +
+          'No garantiza algo mejor.</p>' +
+          c.btn('Esperar', 'wait-offers', { variant: 'gold' }) +
+          '<div class="mt">' + c.btn('Rechazar todas', 'decline-offers', { variant: 'danger' }) + '</div>'
+      });
+    } else {
+      html += c.card({
+        title: 'Rechazar todo',
+        body: '<p class="small muted">Puedes quedarte donde estás o seguir libre esperando algo mejor. ' +
+          'No siempre llega.</p>' + c.btn('Rechazar todas las ofertas', 'decline-offers', { variant: 'danger' })
+      });
+    }
     return html;
   };
 
@@ -13812,6 +14231,32 @@ a { color: var(--ember); }
           if (DCS.game.acceptOffer(value)) {
             app.toast('Has firmado con ' + offer.teamName + '.');
             app.go('dashboard');
+          } else {
+            app.toast('Esa oferta ya no está disponible.');
+            app.render();
+          }
+          return;
+        }
+
+        case 'reject-offer': {
+          var rej = null;
+          (state.offers || []).forEach(function (o) { if (o.id === value) rej = o; });
+          if (!rej) return;
+          if (DCS.game.rejectOffer(value)) {
+            app.toast('Has rechazado a ' + rej.teamName + '.');
+            app.render();
+          }
+          return;
+        }
+
+        case 'wait-offers': {
+          if (state.player.teamId) return;
+          var wr = DCS.game.waitOffers();
+          if (wr && wr.ok) {
+            app.toast('Han pasado ' + wr.weeks + (wr.weeks === 1 ? ' semana.' : ' semanas.'));
+            app.go('offers');
+          } else {
+            app.toast('No puedes esperar ahora.');
           }
           return;
         }
@@ -13819,7 +14264,8 @@ a { color: var(--ember); }
         case 'decline-offers':
           DCS.game.declineOffers();
           app.toast('Has rechazado todas las ofertas.');
-          app.go('dashboard');
+          if (state.player && !state.player.teamId) app.go('offers');
+          else app.go('dashboard');
           return;
 
         case 'wealth-invest': {
