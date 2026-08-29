@@ -1,5 +1,421 @@
 <!DOCTYPE html>
 <html lang="es">
+<!-- DCS_I18N_BEGIN -->
+<script>
+/* DCS i18n — lightweight typed-key catalogs (es default, en, ready for more). */
+(function (DCS) {
+  'use strict';
+
+  var STORAGE_KEY = 'dcs.lang';
+  var DEFAULT_LANG = 'es';
+  var SUPPORTED = ['es', 'en'];
+
+  var catalogs = Object.create(null);
+  var missing = Object.create(null);
+  var lang = DEFAULT_LANG;
+
+  function deepGet(obj, path) {
+    if (!obj || !path) return undefined;
+    var parts = path.split('.');
+    var cur = obj;
+    for (var i = 0; i < parts.length; i++) {
+      if (cur == null || typeof cur !== 'object') return undefined;
+      cur = cur[parts[i]];
+    }
+    return cur;
+  }
+
+  function interpolate(str, vars) {
+    if (str == null || typeof str !== 'string') return str;
+    if (!vars) return str;
+    return str.replace(/\{\{(\w+)\}\}/g, function (_, k) {
+      return vars[k] != null ? String(vars[k]) : '';
+    });
+  }
+
+  function pickPlural(forms, count) {
+    if (forms == null) return undefined;
+    if (typeof forms === 'string') return forms;
+    var n = Math.abs(Number(count)) || 0;
+    if (typeof forms === 'object') {
+      if (n === 1 && forms.one != null) return forms.one;
+      if (forms.other != null) return forms.other;
+      if (forms.one != null) return forms.one;
+    }
+    return undefined;
+  }
+
+  function asString(val, vars) {
+    if (val == null) return undefined;
+    if (typeof val === 'object') {
+      if (val.one != null || val.other != null) {
+        val = pickPlural(val, vars && vars.count);
+      } else {
+        return undefined; /* nested dict — not a leaf string */
+      }
+    }
+    if (val == null || val === '') return undefined;
+    return interpolate(String(val), vars);
+  }
+
+  function resolve(key, vars, fallback) {
+    var primary = asString(deepGet(catalogs[lang], key), vars);
+    if (primary != null) return primary;
+
+    if (lang !== DEFAULT_LANG) {
+      var fb = asString(deepGet(catalogs[DEFAULT_LANG], key), vars);
+      if (fb != null) {
+        if (typeof console !== 'undefined' && console.warn && !missing[lang + ':' + key]) {
+          missing[lang + ':' + key] = 1;
+          console.warn('[i18n] missing ' + lang + ' key:', key);
+        }
+        return fb;
+      }
+    }
+
+    if (fallback != null && fallback !== '') return interpolate(String(fallback), vars);
+
+    if (typeof console !== 'undefined' && console.warn && !missing['?:' + key]) {
+      missing['?:' + key] = 1;
+      console.warn('[i18n] missing key:', key);
+    }
+    return '';
+  }
+
+  function readStored() {
+    try {
+      var v = localStorage.getItem(STORAGE_KEY);
+      if (v && SUPPORTED.indexOf(v) >= 0) return v;
+    } catch (e) { /* ignore */ }
+    return DEFAULT_LANG;
+  }
+
+  function writeStored(v) {
+    try { localStorage.setItem(STORAGE_KEY, v); } catch (e) { /* ignore */ }
+  }
+
+  function setDocumentLang(v) {
+    try {
+      if (document && document.documentElement) document.documentElement.lang = v;
+    } catch (e) { /* ignore */ }
+  }
+
+  /* Known Spanish (and code) stage labels → stable keys */
+  var STAGE_ALIASES = {
+    'Fase de grupos': 'GROUP_STAGE',
+    'Group Stage': 'GROUP_STAGE',
+    'GROUP_STAGE': 'GROUP_STAGE',
+    'Liga regular': 'LEAGUE',
+    'Regular Season': 'LEAGUE',
+    'LEAGUE': 'LEAGUE',
+    'Final': 'FINAL',
+    'Grand Final': 'FINAL',
+    'FINAL': 'FINAL',
+    'Semifinal': 'SEMIFINALS',
+    'Semifinals': 'SEMIFINALS',
+    'SEMIFINALS': 'SEMIFINALS',
+    'Cuartos de final': 'QUARTERFINALS',
+    'Quarterfinals': 'QUARTERFINALS',
+    'QUARTERFINALS': 'QUARTERFINALS',
+    'Octavos de final': 'ROUND_OF_16',
+    'Round of 16': 'ROUND_OF_16',
+    'ROUND_OF_16': 'ROUND_OF_16',
+    'Open Qualifier': 'OPEN_QUALIFIER',
+    'OPEN_QUALIFIER': 'OPEN_QUALIFIER',
+    'Closed Qualifier': 'CLOSED_QUALIFIER',
+    'CLOSED_QUALIFIER': 'CLOSED_QUALIFIER'
+  };
+
+  var RESULT_ALIASES = {
+    'Eliminado en fase de grupos': 'ELIMINATED_GROUPS',
+    'Eliminated in Group Stage': 'ELIMINATED_GROUPS',
+    'ELIMINATED_GROUPS': 'ELIMINATED_GROUPS',
+    'Clasificado': 'QUALIFIED',
+    'Qualified': 'QUALIFIED',
+    'QUALIFIED': 'QUALIFIED',
+    'Clasificado al evento': 'QUALIFIED_EVENT',
+    'Qualified for the event': 'QUALIFIED_EVENT',
+    'QUALIFIED_EVENT': 'QUALIFIED_EVENT',
+    'Eliminado en la final': 'ELIMINATED_FINAL',
+    'Eliminated in the Final': 'ELIMINATED_FINAL',
+    'ELIMINATED_FINAL': 'ELIMINATED_FINAL',
+    'Eliminado': 'ELIMINATED',
+    'Eliminated': 'ELIMINATED',
+    'ELIMINATED': 'ELIMINATED',
+    'Campeón': 'CHAMPION',
+    'Champion': 'CHAMPION',
+    'CHAMPION': 'CHAMPION',
+    'Subcampeón': 'RUNNER_UP',
+    'Runner-up': 'RUNNER_UP',
+    'RUNNER_UP': 'RUNNER_UP',
+    '3er puesto': 'PLACE_3',
+    '3rd place': 'PLACE_3',
+    'PLACE_3': 'PLACE_3',
+    '4º puesto': 'PLACE_4',
+    '4th place': 'PLACE_4',
+    'PLACE_4': 'PLACE_4',
+    '5º-6º puesto': 'PLACE_5_6',
+    '5th–6th place': 'PLACE_5_6',
+    'PLACE_5_6': 'PLACE_5_6',
+    '7º-8º puesto': 'PLACE_7_8',
+    '7th–8th place': 'PLACE_7_8',
+    'PLACE_7_8': 'PLACE_7_8',
+    '9º-12º puesto': 'PLACE_9_12',
+    '9th–12th place': 'PLACE_9_12',
+    'PLACE_9_12': 'PLACE_9_12',
+    'Eliminado en cuartos': 'ELIMINATED_QF',
+    'Eliminated in Quarterfinals': 'ELIMINATED_QF',
+    'ELIMINATED_QF': 'ELIMINATED_QF',
+    'Eliminado en semifinales': 'ELIMINATED_SF',
+    'Eliminated in Semifinals': 'ELIMINATED_SF',
+    'ELIMINATED_SF': 'ELIMINATED_SF',
+    'Eliminado en la clasificatoria': 'ELIMINATED_QUALIFIER',
+    'Eliminated in Qualifiers': 'ELIMINATED_QUALIFIER',
+    'ELIMINATED_QUALIFIER': 'ELIMINATED_QUALIFIER'
+  };
+
+  var MATCH_LABEL_KEYS = {
+    WIN_NORMAL: 'match.victory',
+    WIN_DOMINANT: 'match.dominantWin',
+    WIN_CLOSE: 'match.closeWin',
+    WIN_COMEBACK: 'match.comebackWin',
+    WIN_UPSET: 'match.upsetWin',
+    LOSS_NORMAL: 'match.defeat',
+    LOSS_DOMINANT: 'match.clearLoss',
+    LOSS_CLOSE: 'match.closeLoss',
+    LOSS_DISAPPOINTING: 'match.disappointingLoss',
+    DRAW: 'match.draw',
+    VERDICT_WIN: 'match.victory',
+    VERDICT_LOSS: 'match.defeat',
+    VERDICT_DRAW: 'match.draw'
+  };
+
+  function stageKey(stage) {
+    if (!stage) return '';
+    if (STAGE_ALIASES[stage]) return STAGE_ALIASES[stage];
+    if (/^Ronda\s+(\d+)$/i.test(stage) || /^Round\s+(\d+)$/i.test(stage)) {
+      return 'ROUND_N';
+    }
+    return String(stage);
+  }
+
+  function resultKey(label) {
+    if (!label) return '';
+    if (RESULT_ALIASES[label]) return RESULT_ALIASES[label];
+    var m = String(label).match(/^(\d+)[º°]?(\s*puesto|\s*place)?$/i);
+    if (m) return 'PLACE_N';
+    return String(label);
+  }
+
+  var i18n = {
+    DEFAULT_LANG: DEFAULT_LANG,
+    SUPPORTED: SUPPORTED.slice(),
+    catalogs: catalogs,
+    missing: missing,
+
+    register: function (code, dict) {
+      if (!code || !dict) return;
+      catalogs[code] = dict;
+      if (SUPPORTED.indexOf(code) < 0) SUPPORTED.push(code);
+    },
+
+    getLang: function () { return lang; },
+
+    setLang: function (code, opts) {
+      if (SUPPORTED.indexOf(code) < 0 && !catalogs[code]) return lang;
+      lang = code;
+      writeStored(code);
+      setDocumentLang(code);
+      if (!opts || opts.render !== false) {
+        try {
+          if (DCS.ui && DCS.ui.app && typeof DCS.ui.app.render === 'function') {
+            DCS.ui.app.render();
+          }
+        } catch (e) { /* ignore */ }
+      }
+      return lang;
+    },
+
+    t: function (key, vars, fallback) {
+      return resolve(key, vars || null, fallback);
+    },
+
+    tn: function (key, count, vars, fallback) {
+      var v = vars ? Object.assign({}, vars) : {};
+      v.count = count;
+      return resolve(key, v, fallback);
+    },
+
+    /* Format helpers — presentation only */
+    number: function (n, opts) {
+      try {
+        return new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'es-ES', opts || {}).format(n);
+      } catch (e) {
+        return String(n);
+      }
+    },
+
+    money: function (n) {
+      try {
+        return new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'es-ES', {
+          style: 'currency', currency: 'EUR', maximumFractionDigits: 0
+        }).format(n);
+      } catch (e) {
+        return '€' + String(n);
+      }
+    },
+
+    stageKey: stageKey,
+    resultKey: resultKey,
+
+    stage: function (stage, vars) {
+      var k = stageKey(stage);
+      if (k === 'ROUND_N') {
+        var n = (String(stage).match(/(\d+)/) || [])[1] || '';
+        return resolve('stage.ROUND_N', Object.assign({ n: n }, vars || {}), stage);
+      }
+      return resolve('stage.' + k, vars, stage);
+    },
+
+    result: function (label, vars) {
+      var k = resultKey(label);
+      if (k === 'PLACE_N') {
+        var n = (String(label).match(/(\d+)/) || [])[1] || '';
+        return resolve('result.PLACE_N', Object.assign({ n: n }, vars || {}), label);
+      }
+      if (RESULT_ALIASES[label] || RESULT_ALIASES[k]) {
+        return resolve('result.' + k, vars, label);
+      }
+      /* Unknown legacy string — show as-is */
+      return label;
+    },
+
+    matchType: function (rt) {
+      if (!rt) return '';
+      var result = rt.result || (rt.won === true ? 'WIN' : (rt.won === false ? 'LOSS' : 'DRAW'));
+      var type = rt.type || 'NORMAL';
+      var key;
+      if (result === 'DRAW') key = MATCH_LABEL_KEYS.DRAW;
+      else if (result === 'WIN') {
+        key = MATCH_LABEL_KEYS['WIN_' + type] || MATCH_LABEL_KEYS.WIN_NORMAL;
+      } else {
+        key = MATCH_LABEL_KEYS['LOSS_' + type] || MATCH_LABEL_KEYS.LOSS_NORMAL;
+      }
+      return resolve(key, null, rt.label || '');
+    },
+
+    matchVerdict: function (rt) {
+      if (!rt) return '';
+      var result = rt.result || 'DRAW';
+      var key = result === 'WIN' ? MATCH_LABEL_KEYS.VERDICT_WIN
+        : (result === 'LOSS' ? MATCH_LABEL_KEYS.VERDICT_LOSS : MATCH_LABEL_KEYS.VERDICT_DRAW);
+      return resolve(key, null, rt.verdict || '');
+    },
+
+    /** Re-resolve event copy at display time (language-switch safe). */
+    eventView: function (ev) {
+      if (!ev) return { title: '', text: '', options: [] };
+      var key = ev.key || ev.pendingKey || '';
+      var vars = ev.vars || {};
+      var title = key
+        ? resolve('events.' + key + '.title', vars, ev.title || '')
+        : (ev.title || '');
+      var text = '';
+      if (ev.textKey) {
+        text = resolve(ev.textKey, vars, ev.text || '');
+      } else if (key) {
+        var tone = ev.tone || 'neutral';
+        text = resolve('events.' + key + '.text.' + tone, vars,
+          resolve('events.' + key + '.text', vars, ev.text || ''));
+      } else {
+        text = ev.text || '';
+      }
+      var options = (ev.options || []).map(function (o, i) {
+        var lk = o.labelKey || (key ? 'events.' + key + '.opt' + i + '.label' : null);
+        var hk = o.hintKey || (key ? 'events.' + key + '.opt' + i + '.hint' : null);
+        return {
+          label: lk ? resolve(lk, vars, o.label || '') : (o.label || ''),
+          hint: hk ? resolve(hk, vars, o.hint || '') : (o.hint || '')
+        };
+      });
+      return { title: title, text: text, options: options };
+    },
+
+    /** Compact language switcher markup */
+    langSwitch: function (opts) {
+      opts = opts || {};
+      var cls = opts.className || 'lang-switch';
+      var html = '<div class="' + cls + '" role="group" aria-label="' +
+        resolve('common.language', null, 'Idioma') + '">';
+      for (var i = 0; i < SUPPORTED.length; i++) {
+        var code = SUPPORTED[i];
+        var active = code === lang ? ' active' : '';
+        html += '<button type="button" class="lang-btn' + active +
+          '" data-action="set-lang" data-value="' + code + '" aria-pressed="' +
+          (code === lang ? 'true' : 'false') + '">' +
+          code.toUpperCase() + '</button>';
+        if (i < SUPPORTED.length - 1) html += '<span class="lang-sep" aria-hidden="true">|</span>';
+      }
+      html += '</div>';
+      return html;
+    },
+
+    /**
+     * Bind object field getters to translation keys.
+     * Preserves original Spanish as fallback via closure.
+     */
+    bindFields: function (bag, prefix, fields) {
+      if (!bag) return;
+      Object.keys(bag).forEach(function (id) {
+        var item = bag[id];
+        if (!item) return;
+        (fields || []).forEach(function (field) {
+          if (!Object.prototype.hasOwnProperty.call(item, field)) return;
+          var raw = item[field];
+          if (typeof raw !== 'string') return;
+          try {
+            Object.defineProperty(item, field, {
+              configurable: true,
+              enumerable: true,
+              get: function () {
+                return resolve(prefix + '.' + id + '.' + field, null, raw);
+              }
+            });
+          } catch (e) { /* ignore non-configurable */ }
+        });
+      });
+    },
+
+    init: function () {
+      lang = readStored();
+      setDocumentLang(lang);
+      return lang;
+    }
+  };
+
+  DCS.i18n = i18n;
+  /** Global translation helper (safe outside UI screens IIFE). */
+  DCS.t = function (key, vars, fallback) {
+    return i18n.t(key, vars, fallback);
+  };
+})(window.DCS = window.DCS || {});
+
+</script>
+<script>
+(function(DCS){
+"use strict";
+DCS.i18n.register("es", {"common":{"language":"Idioma","continue":"Continuar","back":"Volver","confirm":"Confirmar","cancel":"Cancelar","accept":"Aceptar","reject":"Rechazar","wait":"Esperar","save":"Guardar","close":"Cerrar","next":"Siguiente","previous":"Anterior","yes":"Sí","no":"No","home":"Inicio","about":"Acerca de","settings":"Configuración","loading":"Cargando…","none":"—","freeAgent":"Agente libre","freeAgentShort":"Free Agent","noTeam":"Sin equipo","resolve":"Resolver","invest":"Invertir","train":"Entrenar","rest":"Descansar","days":{"one":"{{count}} día","other":"{{count}} días"},"years":{"one":"{{count}} año","other":"{{count}} años"},"wins":{"one":"{{count}} victoria","other":"{{count}} victorias"},"losses":{"one":"{{count}} derrota","other":"{{count}} derrotas"},"offers":{"one":"{{count}} oferta","other":"{{count}} ofertas"},"all":"todas"},"home":{"lead":"Construye tu carrera. Cada temporada puede cambiarlo todo.","newCareer":"Nueva carrera","continueCareer":"Continuar carrera","wipe":"Borrar y empezar de cero","storageBlocked":"Tu navegador ha bloqueado el almacenamiento local; la partida solo vivirá en esta pestaña.","about":"Acerca de"},"about":{"kicker":"DOTA 2 Career Sim","tag1":"Tu carrera.","tag2":"Tus decisiones.","tag3":"Tu legado.","lead":"Un simulador de carrera inspirado en el ecosistema competitivo de Dota 2. No empiezas como una leyenda. Empiezas intentando convertirte en una.","s1Title":"Empieza desde abajo","s1p1":"Elige dónde comenzar tu carrera, entra en el mercado como agente libre y compara ofertas de tu región. Nadie te asigna un equipo: tú decides dónde firmar tu primer contrato.","s1p2":"Tu rendimiento importa. Una buena temporada puede abrirte puertas; una mala puede obligarte a bajar de nivel, aceptar contratos inferiores o reconstruir desde abajo.","s2Title":"Construye tu carrera","s2p1":"A lo largo de los años compites, mejoras, negocias contratos, cambias de equipo y gestionas tu reputación. Clasificatorias regionales, torneos, grandes escenarios y The International marcan el ritmo de cada temporada.","s2p2":"Puedes convertirte en una estrella, cambiar de región, ganar títulos, caer en desgracia o protagonizar un comeback. El mercado responde a lo que demuestras.","s3Title":"Deja tu legado","s3p1":"El objetivo no es solo ganar partidas. Es construir una historia. Cada carrera puede contarse de forma distinta: las decisiones que tomas dejan huella hasta el día en que cuelgas el ratón.","path1":"Empiezas abajo","path2":"Oportunidades","path3":"Decisiones","path4":"Compites","path5":"Subes o caes","path6":"Legado","closeQ":"¿Hasta dónde puedes llegar?","createdBy":"Creado por","medalAlt":"Medalla Ancestral I","medal":"Ancestral I","creditsAria":"Créditos del creador","back":"Volver"},"nav":{"dashboard":"Dashboard","profile":"Perfil","team":"Equipo","season":"Temporada","tournaments":"Torneos","finances":"Patrimonio","offers":"Ofertas","career":"Carrera","legacy":"Legado","live":"en juego","closing":"cierre"},"phase":{"preseason":"Pretemporada","competition":"Competición","review":"Cierre","market":"Mercado","yearEnd":"Fin de año"},"hud":{"age":"Edad","overall":"Val","mmr":"MMR","rating":"Rating","rep":"Rep"},"create":{"title":"Nueva carrera","name":"Nombre","nick":"Nickname","country":"País","searchCountry":"Buscar país","region":"Región","role":"Rol","style":"Estilo","attributes":"Atributos","confirm":"Confirmar identidad","start":"Comenzar carrera","noName":"sin nombre","hints":{"carry":"Farm · Escalado · Daño","mid":"Mecánicas · Tempo · Dominio","offlane":"Iniciación · Espacio · Teamfight","pos4":"Rotaciones · Playmaking · Control","pos5":"Visión · Teamplay · Liderazgo"}},"dash":{"age":"Edad","season":"Temporada","reputation":"Reputación","ranking":"Ranking","netWorth":"Patrimonio","team":"Equipo","contract":"Contrato","form":"Forma","market":"Mercado","freeAgentStatus":"Agente libre","debutMarket":"Mercado de debut","contractStatus":"Situación contractual","entryRegion":"Región de entrada","nextRival":"Próximo rival","nextStep":"Próximo paso","careerStarts":"Tu carrera empieza aquí. Pulsa {{action}} para seguir.","faIntro":"Eres agente libre. Tu región fija el mercado de entrada: {{region}}.","faNoMaps":"Eres agente libre. Sin equipo no hay mapas oficiales: el mercado es tu único camino.","captain":"Capitán","internalRole":"Rol interno","position":"Posición","howRated":"Cómo te ha evaluado el circuito","andAlso":"Y además…","noCalls":"Nadie ha llamado a tu puerta este año. Sigues donde estás.","noOffers":"Ningún equipo te ha hecho una oferta. El teléfono no suena.","faNoMapsFull":"Eres agente libre. Sin equipo no hay mapas oficiales: grindeas pubs y esperas que alguien se fije en ti en el mercado.","seasonsWithoutTeam":"Temporadas sin equipo","rosterSynergy":"Sinergia del roster"},"profile":{"skills":"Skills","stats":"Estadísticas","history":"Historial","titles":"Títulos","reputation":"Reputación","legacy":"Legado","attrs":"Atributos","valuation":"Valoración","howRated":"Cómo te ha evaluado el circuito","scouting":"Opinión del scouting","bestRating":"Mejor valoración alcanzada","ceilingHint":"Nadie conoce tu techo real, ni siquiera tú. Solo se descubre jugando.","noOfficialMaps":"Todavía no has disputado mapas oficiales.","vsBenchmark":"Frente al baremo de tu posición","yearByYear":"Tu nivel real año a año.","circuitEachYear":"Cómo te evaluó el circuito cada año.","overallVal":"Valoración general","org":"Organización"},"team":{"roster":"Roster","tier":"Tier","region":"Región","chemistry":"Química","ranking":"Ranking","salary":"Salario","contract":"Contrato","noOrg":"Ahora mismo no perteneces a ninguna organización. Grindeas pubs, buscas tryouts y esperas que el mercado se fije en ti."},"season":{"calendar":"Calendario","advance":"Avanzar","preseason":"Pretemporada","market":"Mercado","circuit":"Circuito","yearCalendar":"Calendario del año","noCalendar":"Todavía no hay calendario. Se sortea en la pretemporada.","quietYear":"El año se cierra sin sobresaltos.","andAlso":"Y además…","noCalls":"Nadie ha llamado a tu puerta este año. Sigues donde estás.","noOffers":"Ningún equipo te ha hecho una oferta. El teléfono no suena."},"tour":{"qualifier":"Clasificatoria","openQualifier":"Open Qualifier","closedQualifier":"Closed Qualifier","groupStage":"Fase de grupos","quarters":"Cuartos de final","semis":"Semifinal","final":"Final","champion":"Campeón","eliminated":"Eliminado","qualified":"Clasificado","prizePool":"Prize pool","prize":"Premio","reputation":"Reputación","standings":"Clasificación","pathTitle":"Camino al título","pathDesc":"De la fase actual hasta la eliminación o el campeonato.","viaOpen":"Vía Open Qualifier","viaClosed":"Vía Closed Qualifier","viaQualifier":"Vía clasificatoria","viaRegional":"Vía Regional Qualifier","directInvite":"Invitación directa","contestedQualifier":"Clasificatorio disputado","outOfReach":"Fuera de alcance este año","finalPosition":"Posición final","eliminatedGroups":"Has quedado eliminado en la fase de grupos.","simulateSeries":"Simular serie","simulateTournament":"Simular torneo","seriesInProgress":"Serie en curso","decisionPending":"Tienes una decisión pendiente","skipToMarket":"Saltar al mercado","viewOffers":"Ver ofertas","offersPending":"{{count}} oferta(s) sin responder"},"match":{"victory":"Victoria","defeat":"Derrota","draw":"Empate","dominantWin":"Victoria dominante","closeWin":"Victoria ajustada","comebackWin":"Victoria en remontada","upsetWin":"Gran victoria · Upset","clearLoss":"Derrota clara","closeLoss":"Derrota ajustada","disappointingLoss":"Derrota decepcionante","wins":"Victorias","losses":"Derrotas"},"stage":{"GROUP_STAGE":"Fase de grupos","LEAGUE":"Liga regular","FINAL":"Final","SEMIFINALS":"Semifinal","QUARTERFINALS":"Cuartos de final","ROUND_OF_16":"Octavos de final","ROUND_N":"Ronda {{n}}","OPEN_QUALIFIER":"Open Qualifier","CLOSED_QUALIFIER":"Closed Qualifier"},"result":{"ELIMINATED_GROUPS":"Eliminado en fase de grupos","QUALIFIED":"Clasificado","QUALIFIED_EVENT":"Clasificado al evento","ELIMINATED_FINAL":"Eliminado en la final","ELIMINATED":"Eliminado","CHAMPION":"Campeón","RUNNER_UP":"Subcampeón","PLACE_3":"3er puesto","PLACE_4":"4º puesto","PLACE_5_6":"5º-6º puesto","PLACE_7_8":"7º-8º puesto","PLACE_9_12":"9º-12º puesto","PLACE_N":"{{n}}º puesto","ELIMINATED_QF":"Eliminado en cuartos","ELIMINATED_SF":"Eliminado en semifinales","ELIMINATED_QUALIFIER":"Eliminado en la clasificatoria"},"market":{"freeAgent":"Free Agent","offers":"Ofertas","accept":"Aceptar","reject":"Rechazar","wait":"Esperar","interest":"Interés del mercado","expires":"Oferta válida","expiresIn":"Oferta válida {{count}} días","salary":"Salario","duration":"Duración","prizeShare":"Prize share","bonus":"Bonus","tryout":"Tryout","comeback":"Contrato de comeback","multiRegion":"Multi-región","region":"Región","newcomer":"Recién llegado","nothingOnTable":"Nada sobre la mesa","notEnoughSignal":"Los equipos aún no tienen suficiente de ti para decidirse.","tryoutProve":"Tryout: un torneo para demostrar","newInterest":"Nuevo interés del mercado","enteredFA":"Entraste al mercado profesional como Free Agent.","demandLow":"BAJO","demandMedium":"MEDIO","demandHigh":"ALTO","demandVeryHigh":"MUY ALTO","levelHigh":"ALTA","levelMid":"MEDIA","levelLow":"BAJA","teamInterest":"Interés de los equipos","recentForm":"Forma reciente","lastSeries":"Últimas {{count}} series","weeks":{"one":"{{count}} semana","other":"{{count}} semanas"},"salaryAnnual":"Salario anual","perMonth":"/ mes","rejectAll":"Rechazar todas","rejectAllOffers":"Rechazar todas las ofertas","viewDebutOffers":"Ver ofertas de debut","interestBadge":"Interés {{level}}","withdrewOne":"1 organización retiró su interés.","withdrewMany":"{{count}} organizaciones retiraron su interés.","offerImproved":"1 oferta mejoró ligeramente.","offerWorsened":"1 oferta empeoró.","newTeamInterest":"1 nuevo equipo está interesado.","debutMarket":"Mercado de debut","withdrew":{"one":"{{count}} organización retiró su interés.","other":"{{count}} organizaciones retiraron su interés."},"improved":{"one":"{{count}} oferta mejoró ligeramente.","other":"{{count}} ofertas mejoraron ligeramente."},"worsened":{"one":"{{count}} oferta empeoró.","other":"{{count}} ofertas empeoraron."},"newTeams":{"one":"{{count}} nuevo equipo está interesado.","other":"{{count}} nuevos equipos están interesados."},"reachIntl":"Internacional","reachRegional":"Regional","expired":{"one":"{{count}} oferta ha expirado.","other":"{{count}} ofertas han expirado."},"noNewOffers":"No han llegado nuevas ofertas.","marketQuiet":"El mercado para tu posición está tranquilo.","weeksPassed":"Han pasado {{count}} semanas","weeksPassedOne":"Ha pasado 1 semana","marketMoving":"El mercado de fichajes continúa moviéndose.","activeOffers":"{{count}} activas","signOrWait":"firma o espera","nextMove":"decide tu próximo movimiento","noActive":"Sin ofertas activas","canWait":"puedes esperar","decideBefore":"decide antes de seguir"},"contract":{"monthlySalary":"Salario mensual","duration":"Duración","renewal":"Renovación","bonus":"Bonus","prizeShare":"Tournament prize share"},"modal":{"decision":"Decisión","noSpoilers":"Nadie te va a decir qué pasa después.","endCycle":"Fin de ciclo","retireQ":"¿Ha llegado el momento?","keepPlaying":"Continuar mi carrera","keepPlayingHint":"Seguir intentándolo: bajar de tier, cambiar de región o de rol, reconstruirte.","retire":"Retirarme","retireHint":"Cerrar la carrera aquí y descubrir tu legado.","money":"Dinero","wealthAsk":"Te piden {{amount}} en {{cat}}. Nadie te dice qué sale.","investHint":"Riesgo alto. Pones el dinero y esperas.","rejectHint":"Conservas la liquidez.","pendingEvent":"Decisión pendiente","pendingWealth":"Oportunidad financiera","pendingTour":"Torneo"},"region":{"eeu":{"name":"Europa del Este"},"weu":{"name":"Europa Occidental"},"cn":{"name":"China"},"sea":{"name":"Sudeste Asiático"},"na":{"name":"Norteamérica"},"sa":{"name":"Sudamérica"}},"role":{"carry":{"label":"Posición 1","desc":"Farmea, escala y cierra las partidas en el late game."},"mid":{"label":"Posición 2","desc":"Gana la calle central y dicta el ritmo del early game."},"offlane":{"label":"Posición 3","desc":"Crea espacio, inicia las peleas y absorbe presión."},"pos4":{"label":"Posición 4","desc":"Rota, crea jugadas y controla el mapa desde el support ofensivo."},"pos5":{"label":"Posición 5","desc":"Visión, sacrificios y liderazgo desde el hard support."}},"arch":{"mechanical":{"name":"Mecánico","desc":"Manos privilegiadas. Su techo individual es enorme, pero tarda más en entender el juego de equipo.","pros":"Mecánicas y hero pool superiores","cons":"Teamplay y liderazgo más lentos"},"smart":{"name":"Inteligente","desc":"Lee la partida antes de que ocurra. Menos explosivo, más difícil de sorprender.","pros":"Game sense y adaptación superiores","cons":"Menor explosividad mecánica"},"aggressive":{"name":"Agresivo","desc":"Capaz de destrozar un torneo entero. También capaz de hundir una serie el mismo día.","pros":"Actuaciones extraordinarias más frecuentes","cons":"Mucha más volatilidad"},"consistent":{"name":"Consistente","desc":"Rara vez brilla, rara vez falla. Los entrenadores duermen tranquilos con él en el roster.","pros":"Muy pocas malas rachas","cons":"Pocas actuaciones memorables"},"leader":{"name":"Líder","desc":"Organiza, calma y arrastra al equipo. Su valor no siempre aparece en las estadísticas.","pros":"Liderazgo, mentalidad y sinergia superiores","cons":"Desarrollo mecánico más lento"}},"events":{"meta_shift":{"title":"El parche lo cambia todo","text":{"good":"El nuevo parche mueve el meta hacia un estilo que encaja contigo. Los primeros scrims son prometedores.","bad":"El nuevo parche entierra el estilo con el que te sientes cómodo. Vas a tener que reaprender cosas."}},"rivalry":{"title":"Rivalidad","text":{"neutral":"La prensa regional lleva semanas alimentando el duelo entre tú y {{rival}}. Cada vez que os cruzáis en un escenario hay más ruido del habitual."}},"mentor":{"title":"Alguien decide enseñarte","text":{"good":"{{who}} se ha tomado en serio tu desarrollo. Revisáis repeticiones juntos después de cada bloque de scrims."}},"historic":{"title":"Temporada histórica","text":{"great":"Los analistas ya no discuten si eres bueno, discuten dónde te colocan en el ranking mundial de tu posición."}},"coach_change":{"title":"Cambio en el staff","text":{"good":"El nuevo entrenador ordena el caos: drafts más claros, roles definidos y menos discusiones en la voz.","bad":"El nuevo entrenador quiere imponer un sistema que el vestuario no termina de comprar."}},"teammate_leaves":{"title":"Se rompe el roster","text":{"bad":"{{who}} abandona el equipo. Llega un sustituto y toca reconstruir la química desde cero."}},"visa":{"title":"Problemas de visado","text":{"bad":"Un trámite mal gestionado por la organización te deja fuera de un evento presencial. Lo ves desde casa."}},"internal_conflict":{"title":"Conflicto interno","opt0":{"label":"Dar la cara y mediar","hint":"Te expones. Puede salir muy bien o muy mal."},"opt1":{"label":"Apartarme y centrarme en jugar","hint":"Proteges tu rendimiento. El equipo sigue roto."},"text":{"neutral":"El vestuario está partido. Dos compañeros discuten en cada review y el resto elige bando en silencio."}},"burnout":{"title":"No puedes más","opt0":{"label":"Parar dos semanas","hint":"Pierdes ritmo competitivo. Recuperas cabeza."},"opt1":{"label":"Apretar los dientes","hint":"Mantienes el ritmo. Arriesgas tu mentalidad."},"text":{"bad":"Llevas meses encadenando bloques de scrims, viajes y madrugadas. Duermes mal y ya no disfrutas del juego."}},"streaming":{"title":"Oferta de contenido","opt0":{"label":"Firmar el acuerdo","hint":"Dinero y visibilidad. Menos horas de práctica."},"opt1":{"label":"Rechazarlo y entrenar","hint":"Todo al desarrollo."},"text":{"neutral":"Una plataforma te ofrece un contrato de contenido. Dinero fácil, menos horas de práctica."}},"captaincy":{"title":"Te ofrecen el mando","opt0":{"label":"Aceptar el mando","hint":"Creces como líder. Tu juego individual se resiente."},"opt1":{"label":"Prefiero centrarme en mi juego","hint":"Sigues siendo un jugador puro."},"text":{"neutral":"La organización quiere que asumas el rol de capitán y drafter. Más responsabilidad, más ruido, más culpa cuando se pierde."}},"wrist":{"title":"La muñeca","opt0":{"label":"Parar y tratarme","hint":"Pierdes competición. Proteges tus manos."},"opt1":{"label":"Jugar con dolor","hint":"Compites. Podrías arrastrarlo durante años."},"text":{"bad":"Llevas semanas jugando con dolor. El fisio recomienda parar; el calendario dice que no."}},"role_change":{"title":"Cambiar de posición","opt0":{"label":"Cambiar de rol","hint":"Reinicio parcial. Nuevo mercado, nuevo riesgo."},"opt1":{"label":"Seguir en mi posición","hint":"Doblas la apuesta por lo que sabes hacer."},"text":{"neutral":"Un entrenador que te conoce bien cree que estás desperdiciado en tu rol y te propone reconvertirte a {{role}}."}},"region_move":{"title":"Una llamada desde {{region}}","opt0":{"label":"Mudarme","hint":"Otro mercado. Adaptación forzada."},"opt1":{"label":"Quedarme donde estoy","hint":"Estabilidad. Menos puertas."},"text":{"neutral":"Un contacto en {{region}} quiere ficharte. Otro mercado, otra vida."}},"bootcamp":{"title":"Bootcamp por tu cuenta","opt0":{"label":"Pagarlo yo","hint":"Inviertes en ti. El dinero no vuelve."},"opt1":{"label":"No pagarlo","hint":"Guardas el dinero. Llegas más justo."},"text":{"neutral":"La organización no cubre el bootcamp previo al calendario internacional. Puedes pagarlo tú: {{amount}}."}},"contract_dispute":{"title":"Renegociación","opt0":{"label":"Exigir mejora salarial","hint":"Puede salir caro en imagen."},"opt1":{"label":"Dejarlo estar","hint":"Buena imagen interna."},"text":{"neutral":"Tu representante cree que estás cobrando por debajo de tu nivel y quiere reabrir el contrato."}},"bench_threat":{"title":"Te juegas el puesto","opt0":{"label":"Quedarme y pelear el puesto","hint":"Si falla, tu ficha se hunde."},"opt1":{"label":"Salir y buscar equipo","hint":"Mercado abierto sin garantías."},"text":{"bad":"La organización ha probado a un sustituto en scrims. Te dan una temporada para responder, o buscas salida."}},"hot_streak":{"title":"Jugador en racha","text":{"good":"Encadenas buenos mapas. El staff habla de ti con otra cara."}},"results_crisis":{"title":"Crisis de resultados","text":{"bad":"Llevas una racha fea. Las reviews se endurecen y la confianza se resiente."}},"good_scrims":{"title":"Gran semana de scrims","text":{"good":"Habéis machacado a rivales fuertes en la práctica. El equipo llega al calendario con confianza."}},"bad_scrims":{"title":"Malos scrims","text":{"bad":"La semana de práctica ha sido un desastre: drafts confusos y tilteo en la voz."}},"exceptional_training":{"title":"Entrenamiento excepcional","text":{"good":"Encuentras un bloque de práctica limpio: repeticiones útiles y foco total."}},"perfect_bootcamp":{"title":"Bootcamp perfecto","text":{"good":"Dos semanas juntos fuera de casa. La química del roster da un salto."}},"extra_bootcamp":{"title":"Bootcamp extra","opt0":{"label":"Entrenar","hint":"+preparación y química. Más desgaste."},"opt1":{"label":"Descansar","hint":"Recuperáis cabeza. Sin bonus de preparación."},"text":{"neutral":"El staff propone una semana más de preparación antes del siguiente evento."}},"roster_tension":{"title":"Tensión en el roster","text":{"bad":"Las miradas en la review duran demasiado. Alguien habla de cambios en privado."}},"money_trouble":{"title":"Problemas financieros","text":{"bad":"La organización recorta presupuesto. Viajes más baratos, menos staff y rumores de ventas."}},"org_investment":{"title":"Nueva inversión","text":{"good":"Entra capital fresco. Mejoran las condiciones y el club habla de pelear arriba."}},"star_leaves":{"title":"Una estrella se marcha","text":{"bad":"{{who}} se marcha a un proyecto más grande. El techo del equipo baja de golpe."}},"coach_fired":{"title":"Entrenador despedido","text":{"neutral":"La organización corta por lo sano. Llega un nuevo staff a mitad de temporada."}},"org_exits_dota":{"title":"La org cierra el proyecto","text":{"bad":"La organización abandona Dota. Quedas libre de golpe, con el mercado a medias."}},"market_interest":{"title":"Interés de otro equipo","text":{"good":"Un director deportivo pregunta por tu situación. No hay oferta todavía, pero el mercado te mira."}},"high_demand":{"title":"Alta demanda de tu posición","text":{"good":"Hay pocos jugadores de tu rol en forma. Varios clubs buscan exactamente tu perfil."}},"saturated_market":{"title":"Mercado saturado","text":{"bad":"Tu posición está llena de candidatos. Costará destacar aunque rindas bien."}},"free_agent_tryout":{"title":"Tryout improvisado","text":{"neutral":"Te llaman a unas pruebas de un día. No hay contrato sobre la mesa, solo la oportunidad de gustar."}},"ti_spotlight":{"title":"Foco mundial","text":{"great":"Clasificar a The International te pone en todas las conversaciones. Sponsors y clubs toman nota."}},"tier1_glory":{"title":"Notoriedad de Tier 1","text":{"great":"Ganar un Tier 1 cambia cómo te miran. Dejas de ser promesa: eres referencia."}},"early_exit_pressure":{"title":"Presión tras la eliminación temprana","text":{"bad":"Caer pronto en un evento grande genera reuniones serias. El roster no está a salvo."}},"upset_buzz":{"title":"Eco de la gran victoria","text":{"good":"Derrotar a un rival claramente superior sigue dando que hablar días después."}},"bad_loss_fallout":{"title":"Críticas por la derrota","text":{"bad":"Perder contra un rival inferior no se olvida fácil. La afición pide respuestas."}},"new_patch":{"title":"Nuevo parche","text":{"neutral":"Llega un parche relevante. Todos reaprenden; algunos aprovechan el caos mejor que otros."}},"travel_issues":{"title":"Problemas de viaje","text":{"bad":"Retrasos, jet lag y un hotel mediocre. Llegáis al evento justos de preparación."}},"sponsor_deal":{"title":"Sponsor relevante","text":{"good":"Una marca grande te ficha como rostro. Dinero extra y más exigencias de agenda."}},"surprise_invite":{"title":"Invitación inesperada","text":{"great":"Un organizador Tier 1 os cuela en la lista de invitados. Nadie se lo esperaba."}}},"training":{"title":"Entrenamiento","fatigue":"Fatiga","progress":"Progreso","improve":"Mejoras"},"legacy":{"title":"Legado","earnings":"Ganancias","career":"Carrera","netWorth":"Patrimonio","achievements":"Logros"},"finance":{"title":"Patrimonio","cash":"Liquidez","earnings":"Ganancias"},"attrs":{"mech":"Mecánicas","sense":"Game sense","pool":"Hero pool","cons":"Consistencia","ment":"Mentalidad","team":"Teamplay","adapt":"Adaptación","lead":"Liderazgo"}});
+})(window.DCS=window.DCS||{});
+
+</script>
+<script>
+(function(DCS){
+"use strict";
+DCS.i18n.register("en", {"common":{"language":"Language","continue":"Continue","back":"Back","confirm":"Confirm","cancel":"Cancel","accept":"Accept","reject":"Reject","wait":"Wait","save":"Save","close":"Close","next":"Next","previous":"Previous","yes":"Yes","no":"No","home":"Home","about":"About","settings":"Settings","loading":"Loading…","none":"—","freeAgent":"Free Agent","freeAgentShort":"Free Agent","noTeam":"Free Agent","resolve":"Resolve","invest":"Invest","train":"Train","rest":"Rest","days":{"one":"{{count}} day","other":"{{count}} days"},"years":{"one":"{{count}} year","other":"{{count}} years"},"wins":{"one":"{{count}} win","other":"{{count}} wins"},"losses":{"one":"{{count}} defeat","other":"{{count}} defeats"},"offers":{"one":"{{count}} offer","other":"{{count}} offers"},"all":"all"},"home":{"lead":"Build your career. Every season can change everything.","newCareer":"New Career","continueCareer":"Continue Career","wipe":"Wipe and start over","storageBlocked":"Your browser blocked local storage; this save only lasts in this tab.","about":"About"},"about":{"kicker":"DOTA 2 Career Sim","tag1":"Your career.","tag2":"Your decisions.","tag3":"Your legacy.","lead":"A career simulator inspired by the competitive Dota 2 ecosystem. You don’t start as a legend. You start trying to become one.","s1Title":"Start from the bottom","s1p1":"Choose where to begin, enter the market as a Free Agent, and compare offers from your region. Nobody assigns you a team — you decide where to sign your first contract.","s1p2":"Performance matters. A strong season can open doors; a bad one can force you down a tier, onto weaker deals, or back to rebuilding.","s2Title":"Build your career","s2p1":"Across the years you compete, improve, negotiate contracts, switch teams, and manage your reputation. Regional qualifiers, tournaments, big stages, and The International set the pace of every season.","s2p2":"You can become a star, change regions, win titles, fall from grace, or stage a comeback. The market reacts to what you prove.","s3Title":"Leave a legacy","s3p1":"The goal isn’t only winning games. It’s building a story. Every career can be told differently — the choices you make leave a mark until the day you hang up the mouse.","path1":"Start at the bottom","path2":"Opportunities","path3":"Decisions","path4":"Compete","path5":"Rise or fall","path6":"Legacy","closeQ":"How far can you go?","createdBy":"Created by","medalAlt":"Ancestral I medal","medal":"Ancestral I","creditsAria":"Creator credits","back":"Back"},"nav":{"dashboard":"Dashboard","profile":"Profile","team":"Team","season":"Season","tournaments":"Tournaments","finances":"Net Worth","offers":"Offers","career":"Career","legacy":"Legacy","live":"live","closing":"closing"},"phase":{"preseason":"Preseason","competition":"Competition","review":"Review","market":"Market","yearEnd":"Year End"},"hud":{"age":"Age","overall":"OVR","mmr":"MMR","rating":"Rating","rep":"Rep"},"create":{"title":"New Career","name":"Name","nick":"Nickname","country":"Country","searchCountry":"Search country","region":"Region","role":"Role","style":"Playstyle","attributes":"Attributes","confirm":"Confirm identity","start":"Start career","noName":"unnamed","hints":{"carry":"Farm · Scaling · Damage","mid":"Mechanics · Tempo · Dominance","offlane":"Initiation · Space · Teamfight","pos4":"Rotations · Playmaking · Control","pos5":"Vision · Teamplay · Leadership"}},"dash":{"age":"Age","season":"Season","reputation":"Reputation","ranking":"Ranking","netWorth":"Net Worth","team":"Team","contract":"Contract","form":"Form","market":"Market","freeAgentStatus":"Free Agent","debutMarket":"Debut market","contractStatus":"Contract status","entryRegion":"Entry region","nextRival":"Next opponent","nextStep":"Next step","careerStarts":"Your career starts here. Hit {{action}} to keep going.","faIntro":"You’re a Free Agent. Your region sets the entry market: {{region}}.","faNoMaps":"You’re a Free Agent. Without a team there are no official maps — the market is your only path.","captain":"Captain","internalRole":"Internal role","position":"Role","howRated":"How the circuit rated you","andAlso":"And also…","noCalls":"Nobody called this year. You stay put.","noOffers":"No team made you an offer. The phone stays quiet.","faNoMapsFull":"You’re a Free Agent. Without a team there are no official maps — you grind pubs and wait for the market to notice you.","seasonsWithoutTeam":"Seasons without a team","rosterSynergy":"Roster synergy"},"profile":{"skills":"Skills","stats":"Stats","history":"History","titles":"Titles","reputation":"Reputation","legacy":"Legacy","attrs":"Attributes","valuation":"Rating","howRated":"How the circuit rated you","scouting":"Scouting take","bestRating":"Best rating reached","ceilingHint":"Nobody knows your real ceiling — not even you. You only find out by playing.","noOfficialMaps":"You haven’t played official maps yet.","vsBenchmark":"Against your role benchmark","yearByYear":"Your real level, year by year.","circuitEachYear":"How the circuit rated you each year.","overallVal":"Overall rating","org":"Organization"},"team":{"roster":"Roster","tier":"Tier","region":"Region","chemistry":"Chemistry","ranking":"Ranking","salary":"Salary","contract":"Contract","noOrg":"You’re not on any organization right now. You grind pubs, hunt tryouts, and wait for the market to notice you."},"season":{"calendar":"Calendar","advance":"Advance","preseason":"Preseason","market":"Market","circuit":"Circuit","yearCalendar":"Season calendar","noCalendar":"No calendar yet. It’s drawn in preseason.","quietYear":"The year closes without major shocks.","andAlso":"And also…","noCalls":"Nobody called this year. You stay where you are.","noOffers":"No team made you an offer. The phone stays quiet."},"tour":{"qualifier":"Qualifier","openQualifier":"Open Qualifier","closedQualifier":"Closed Qualifier","groupStage":"Group Stage","quarters":"Quarterfinals","semis":"Semifinals","final":"Grand Final","champion":"Champion","eliminated":"Eliminated","qualified":"Qualified","prizePool":"Prize pool","prize":"Prize","reputation":"Reputation","standings":"Standings","pathTitle":"Path to the title","pathDesc":"From the current stage to elimination or the championship.","viaOpen":"Via Open Qualifier","viaClosed":"Via Closed Qualifier","viaQualifier":"Via Qualifier","viaRegional":"Via Regional Qualifier","directInvite":"Direct invite","contestedQualifier":"Contested qualifier","outOfReach":"Out of reach this year","finalPosition":"Final placement","eliminatedGroups":"You were eliminated in the Group Stage.","simulateSeries":"Simulate series","simulateTournament":"Simulate tournament","seriesInProgress":"Series in progress","decisionPending":"You have a pending decision","skipToMarket":"Skip to market","viewOffers":"View offers","offersPending":"{{count}} unanswered offer(s)"},"match":{"victory":"Victory","defeat":"Defeat","draw":"Draw","dominantWin":"Dominant Victory","closeWin":"Close Victory","comebackWin":"Comeback Victory","upsetWin":"Huge Win · Upset","clearLoss":"Clear Defeat","closeLoss":"Close Defeat","disappointingLoss":"Disappointing Defeat","wins":"Wins","losses":"Losses"},"stage":{"GROUP_STAGE":"Group Stage","LEAGUE":"Regular Season","FINAL":"Grand Final","SEMIFINALS":"Semifinals","QUARTERFINALS":"Quarterfinals","ROUND_OF_16":"Round of 16","ROUND_N":"Round {{n}}","OPEN_QUALIFIER":"Open Qualifier","CLOSED_QUALIFIER":"Closed Qualifier"},"result":{"ELIMINATED_GROUPS":"Eliminated in Group Stage","QUALIFIED":"Qualified","QUALIFIED_EVENT":"Qualified for the event","ELIMINATED_FINAL":"Eliminated in the Final","ELIMINATED":"Eliminated","CHAMPION":"Champion","RUNNER_UP":"Runner-up","PLACE_3":"3rd place","PLACE_4":"4th place","PLACE_5_6":"5th–6th place","PLACE_7_8":"7th–8th place","PLACE_9_12":"9th–12th place","PLACE_N":"{{n}}th place","ELIMINATED_QF":"Eliminated in Quarterfinals","ELIMINATED_SF":"Eliminated in Semifinals","ELIMINATED_QUALIFIER":"Eliminated in Qualifiers"},"market":{"freeAgent":"Free Agent","offers":"Offers","accept":"Accept","reject":"Reject","wait":"Wait","interest":"Market Interest","expires":"Offer expires","expiresIn":"Offer expires in {{count}} days","salary":"Salary","duration":"Length","prizeShare":"Prize share","bonus":"Bonus","tryout":"Tryout","comeback":"Comeback contract","multiRegion":"Multi-region","region":"Region","newcomer":"Newcomer","nothingOnTable":"Nothing on the table","notEnoughSignal":"Teams don’t have enough signal on you to pull the trigger.","tryoutProve":"Tryout: one tournament to prove it","newInterest":"New market interest","enteredFA":"You entered the pro market as a Free Agent.","demandLow":"LOW","demandMedium":"MED","demandHigh":"HIGH","demandVeryHigh":"VERY HIGH","levelHigh":"HIGH","levelMid":"MED","levelLow":"LOW","teamInterest":"Team interest","recentForm":"Recent form","lastSeries":"Last {{count}} series","weeks":{"one":"{{count}} week","other":"{{count}} weeks"},"salaryAnnual":"Annual salary","perMonth":"/ mo","rejectAll":"Reject all","rejectAllOffers":"Reject all offers","viewDebutOffers":"View debut offers","interestBadge":"Interest {{level}}","withdrewOne":"1 organization withdrew interest.","withdrewMany":"{{count}} organizations withdrew interest.","offerImproved":"1 offer improved slightly.","offerWorsened":"1 offer got worse.","newTeamInterest":"1 new team is interested.","debutMarket":"Debut market","withdrew":{"one":"{{count}} organization withdrew interest.","other":"{{count}} organizations withdrew interest."},"improved":{"one":"{{count}} offer improved slightly.","other":"{{count}} offers improved slightly."},"worsened":{"one":"{{count}} offer got worse.","other":"{{count}} offers got worse."},"newTeams":{"one":"{{count}} new team is interested.","other":"{{count}} new teams are interested."},"reachIntl":"International","reachRegional":"Regional","expired":{"one":"{{count}} offer expired.","other":"{{count}} offers expired."},"noNewOffers":"No new offers came in.","marketQuiet":"The market for your role is quiet.","weeksPassed":"{{count}} weeks have passed","weeksPassedOne":"1 week has passed","marketMoving":"The transfer market keeps moving.","activeOffers":"{{count}} active","signOrWait":"sign or wait","nextMove":"choose your next move","noActive":"No active offers","canWait":"you can wait","decideBefore":"decide before you move on"},"contract":{"monthlySalary":"Monthly salary","duration":"Duration","renewal":"Renewal","bonus":"Bonus","prizeShare":"Tournament prize share"},"modal":{"decision":"Decision","noSpoilers":"Nobody will tell you what happens next.","endCycle":"End of cycle","retireQ":"Is it time?","keepPlaying":"Keep playing","keepPlayingHint":"Keep grinding: drop a tier, change region or role, rebuild.","retire":"Retire","retireHint":"End the career here and see your legacy.","money":"Money","wealthAsk":"They’re asking for {{amount}} in {{cat}}. Nobody says what comes out.","investHint":"High risk. You put the money down and wait.","rejectHint":"You keep the cash.","pendingEvent":"Pending decision","pendingWealth":"Financial opportunity","pendingTour":"Tournament"},"region":{"eeu":{"name":"Eastern Europe"},"weu":{"name":"Western Europe"},"cn":{"name":"China"},"sea":{"name":"Southeast Asia"},"na":{"name":"North America"},"sa":{"name":"South America"}},"role":{"carry":{"label":"Position 1","desc":"Farm, scale, and close out games in the late game."},"mid":{"label":"Position 2","desc":"Win mid lane and dictate early-game tempo."},"offlane":{"label":"Position 3","desc":"Create space, initiate fights, and absorb pressure."},"pos4":{"label":"Position 4","desc":"Rotate, make plays, and control the map from soft support."},"pos5":{"label":"Position 5","desc":"Vision, sacrifices, and leadership from hard support."}},"arch":{"mechanical":{"name":"Mechanical","desc":"Gifted hands. Huge individual ceiling, slower to learn team play.","pros":"Superior mechanics and hero pool","cons":"Slower teamplay and leadership growth"},"smart":{"name":"Smart","desc":"Reads the game before it happens. Less explosive, harder to surprise.","pros":"Superior game sense and adaptation","cons":"Less mechanical explosiveness"},"aggressive":{"name":"Aggressive","desc":"Can tear through a whole tournament — or throw a series the same day.","pros":"Extraordinary performances more often","cons":"Much higher volatility"},"consistent":{"name":"Consistent","desc":"Rarely shines, rarely fails. Coaches sleep well with him on the roster.","pros":"Very few slumps","cons":"Few memorable performances"},"leader":{"name":"Leader","desc":"Organizes, calms, and drags the team forward. Value that doesn’t always show in stats.","pros":"Superior leadership, mentality, and synergy","cons":"Slower mechanical development"}},"events":{"meta_shift":{"title":"The patch changes everything","text":{"good":"The new patch shifts the meta toward a style that fits you. Early scrims look promising.","bad":"The new patch buries the style you’re comfortable with. You’ll have to relearn a lot."}},"rivalry":{"title":"Rivalry","text":{"neutral":"Regional media has been hyping the rivalry between you and {{rival}} for weeks. Every time you share a stage, the noise is louder than usual."}},"mentor":{"title":"Someone takes you under their wing","text":{"good":"{{who}} has taken your development seriously. You review replays together after every scrim block."}},"historic":{"title":"Historic season","text":{"great":"Analysts no longer debate whether you’re good — they argue where you sit in the world rankings for your role."}},"coach_change":{"title":"Staff change","text":{"good":"The new coach cleans up the chaos: clearer drafts, defined roles, fewer voice-chat arguments.","bad":"The new coach wants to force a system the roster still won’t buy into."}},"teammate_leaves":{"title":"Roster breaks","text":{"bad":"{{who}} leaves the team. A replacement arrives and chemistry has to be rebuilt from scratch."}},"visa":{"title":"Visa issues","text":{"bad":"A paperwork mess from the organization keeps you out of a LAN. You watch from home."}},"internal_conflict":{"title":"Internal conflict","opt0":{"label":"Step up and mediate","hint":"You put yourself out there. It can go very well — or very badly."},"opt1":{"label":"Stay out and focus on playing","hint":"You protect your form. The team stays broken."},"text":{"neutral":"The locker room is split. Two teammates argue in every review and everyone else quietly picks a side."}},"burnout":{"title":"Burnout","opt0":{"label":"Take two weeks off","hint":"You lose competitive rhythm. You get your head back."},"opt1":{"label":"Grit your teeth","hint":"You keep the pace. You risk your mentality."},"text":{"bad":"Months of stacked scrim blocks, travel, and late nights. You sleep poorly and the game stopped being fun."}},"streaming":{"title":"Content deal","opt0":{"label":"Sign the deal","hint":"Money and visibility. Fewer practice hours."},"opt1":{"label":"Turn it down and train","hint":"Everything into development."},"text":{"neutral":"A platform offers you a content deal. Easy money, fewer practice hours."}},"captaincy":{"title":"They offer you the captaincy","opt0":{"label":"Take the captaincy","hint":"You grow as a leader. Your individual game takes a hit."},"opt1":{"label":"Stay focused on my game","hint":"You remain a pure player."},"text":{"neutral":"The org wants you as captain and drafter. More responsibility, more noise, more blame when you lose."}},"wrist":{"title":"Wrist injury","opt0":{"label":"Stop and get treatment","hint":"You miss competition. You protect your hands."},"opt1":{"label":"Play through the pain","hint":"You compete. You might carry it for years."},"text":{"bad":"You’ve been playing through pain for weeks. Physio says stop; the calendar says no."}},"role_change":{"title":"Role change","opt0":{"label":"Switch roles","hint":"Partial reset. New market, new risk."},"opt1":{"label":"Stay in my role","hint":"You double down on what you know."},"text":{"neutral":"A coach who knows you well thinks you’re wasted in your role and wants to convert you to {{role}}."}},"region_move":{"title":"A call from {{region}}","opt0":{"label":"Move regions","hint":"Another market. Forced adaptation."},"opt1":{"label":"Stay where I am","hint":"Stability. Fewer doors."},"text":{"neutral":"A contact in {{region}} wants to sign you. Another market, another life."}},"bootcamp":{"title":"Self-funded bootcamp","opt0":{"label":"Pay for it myself","hint":"You invest in yourself. The money doesn’t come back."},"opt1":{"label":"Don’t pay","hint":"You keep the cash. You arrive less prepared."},"text":{"neutral":"The org won’t cover the bootcamp before the international calendar. You can pay yourself: {{amount}}."}},"contract_dispute":{"title":"Renegotiation","opt0":{"label":"Demand a raise","hint":"It can cost you goodwill."},"opt1":{"label":"Let it go","hint":"Good standing inside the org."},"text":{"neutral":"Your agent thinks you’re underpaid for your level and wants to reopen the contract."}},"bench_threat":{"title":"Your spot is on the line","opt0":{"label":"Stay and fight for the spot","hint":"If it fails, your stock tanks."},"opt1":{"label":"Leave and look for a team","hint":"Open market with no guarantees."},"text":{"bad":"The org has been testing a stand-in in scrims. You get one season to answer — or you look for an exit."}},"hot_streak":{"title":"Player on a heater","text":{"good":"You’re stringing together strong maps. The staff talks about you differently."}},"results_crisis":{"title":"Results crisis","text":{"bad":"You’re on a rough skid. Reviews get harsher and confidence takes a hit."}},"good_scrims":{"title":"Great week of scrims","text":{"good":"You’ve smashed strong practice opponents. The team hits the calendar with confidence."}},"bad_scrims":{"title":"Bad scrims","text":{"bad":"Practice week was a disaster: messy drafts and tilt on the voice."}},"exceptional_training":{"title":"Exceptional training","text":{"good":"You find a clean practice block: useful replays and total focus."}},"perfect_bootcamp":{"title":"Perfect bootcamp","text":{"good":"Two weeks together away from home. Roster chemistry takes a leap."}},"extra_bootcamp":{"title":"Extra bootcamp","opt0":{"label":"Train","hint":"+prep and chemistry. More fatigue."},"opt1":{"label":"Rest","hint":"You clear your heads. No prep bonus."},"text":{"neutral":"The staff proposes one more prep week before the next event."}},"roster_tension":{"title":"Roster tension","text":{"bad":"The looks in review last too long. Someone is talking about changes in private."}},"money_trouble":{"title":"Money trouble","text":{"bad":"The org cuts budget. Cheaper travel, less staff, and transfer rumors."}},"org_investment":{"title":"New investment","text":{"good":"Fresh capital comes in. Conditions improve and the club talks about fighting up top."}},"star_leaves":{"title":"A star walks","text":{"bad":"{{who}} leaves for a bigger project. The team’s ceiling drops overnight."}},"coach_fired":{"title":"Coach fired","text":{"neutral":"The org cuts clean. A new staff arrives mid-season."}},"org_exits_dota":{"title":"Org shuts down the project","text":{"bad":"The organization exits Dota. You’re free overnight, with the market half-closed."}},"market_interest":{"title":"Interest from another team","text":{"good":"A sporting director asks about your situation. No offer yet, but the market is watching."}},"high_demand":{"title":"High demand for your role","text":{"good":"Few players in your role are in form. Several clubs want exactly your profile."}},"saturated_market":{"title":"Saturated market","text":{"bad":"Your role is flooded with candidates. It’ll be hard to stand out even if you perform."}},"free_agent_tryout":{"title":"Improvised tryout","text":{"neutral":"You’re called to a one-day tryout. No contract on the table — just a chance to impress."}},"ti_spotlight":{"title":"Global spotlight","text":{"great":"Qualifying for The International puts you in every conversation. Sponsors and clubs take note."}},"tier1_glory":{"title":"Tier 1 notoriety","text":{"great":"Winning a Tier 1 changes how they see you. You’re no longer a prospect — you’re a reference."}},"early_exit_pressure":{"title":"Pressure after an early exit","text":{"bad":"An early exit from a big event triggers serious meetings. The roster isn’t safe."}},"upset_buzz":{"title":"Buzz after the upset","text":{"good":"Beating a clearly superior opponent is still the talk of the circuit days later."}},"bad_loss_fallout":{"title":"Fallout from the loss","text":{"bad":"Losing to an inferior opponent doesn’t fade quickly. The crowd wants answers."}},"new_patch":{"title":"New patch","text":{"neutral":"A major patch lands. Everyone relearns; some ride the chaos better than others."}},"travel_issues":{"title":"Travel issues","text":{"bad":"Delays, jet lag, and a mediocre hotel. You arrive underprepared."}},"sponsor_deal":{"title":"Major sponsor","text":{"good":"A big brand signs you as a face. Extra money and a busier schedule."}},"surprise_invite":{"title":"Surprise invite","text":{"great":"A Tier 1 organizer slips you onto the invite list. Nobody saw it coming."}}},"training":{"title":"Training","fatigue":"Fatigue","progress":"Progress","improve":"Gains"},"legacy":{"title":"Legacy","earnings":"Earnings","career":"Career","netWorth":"Net Worth","achievements":"Achievements"},"finance":{"title":"Net Worth","cash":"Cash","earnings":"Earnings"},"attrs":{"mech":"Mechanics","sense":"Game sense","pool":"Hero pool","cons":"Consistency","ment":"Mentality","team":"Teamplay","adapt":"Adaptation","lead":"Leadership"}});
+})(window.DCS=window.DCS||{});
+
+</script>
+<!-- DCS_I18N_END -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -2881,6 +3297,36 @@ a { color: var(--ember); }
   .hero-bg .cover-lanes { opacity: .4; }
 }
 
+
+/* DCS_LANG_SWITCH_CSS */
+.lang-switch {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: inherit; font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.lang-switch .lang-btn {
+  background: transparent; border: 0; color: inherit; cursor: pointer;
+  padding: 4px 6px; min-height: 28px; opacity: 0.55; font: inherit;
+  letter-spacing: inherit; text-transform: inherit;
+}
+.lang-switch .lang-btn:hover,
+.lang-switch .lang-btn:focus-visible { opacity: 1; color: var(--text); outline: none; }
+.lang-switch .lang-btn.active {
+  opacity: 1; color: var(--gold, #d4a84b); font-weight: 700;
+}
+.lang-switch .lang-sep { opacity: 0.35; user-select: none; }
+.hero-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hero-foot .lang-switch { margin-left: auto; }
+.topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.topbar .lang-switch { flex-shrink: 0; }
+.about-top-actions { display: flex; align-items: center; gap: 10px; }
+@media (max-width: 720px) {
+  .lang-switch { font-size: 10px; }
+  .lang-switch .lang-btn { padding: 6px 8px; min-height: 36px; }
+  .hero-foot { justify-content: center; }
+  .hero-foot .lang-switch { margin-left: 0; width: 100%; justify-content: center; }
+}
+
 </style>
 </head>
 <body>
@@ -3453,6 +3899,7 @@ a { color: var(--ember); }
 
   DCS.data = DCS.data || {};
   DCS.data.ROLES = ROLES;
+  if (DCS.i18n) { try { DCS.i18n.bindFields(ROLES, 'role', ['label', 'desc']); } catch (e) {} }
   DCS.data.ROLE_LIST = ROLE_LIST;
   DCS.data.ATTRS = ATTRS;
   DCS.data.ATTR_KEYS = ATTR_KEYS;
@@ -3543,6 +3990,7 @@ a { color: var(--ember); }
   DCS.data = DCS.data || {};
   DCS.data.ARCHETYPES = ARCHETYPES;
   DCS.data.ARCHETYPE_LIST = ARCHETYPE_LIST;
+  if (DCS.i18n) { try { DCS.i18n.bindFields(ARCHETYPES, 'arch', ['name', 'desc', 'pros', 'cons']); } catch (e) {} }
 })(window.DCS = window.DCS || {});
 
 </script>
@@ -3665,6 +4113,7 @@ a { color: var(--ember); }
   DCS.data.REGIONS = REGIONS;
   DCS.data.REGION_LIST = REGION_LIST;
   DCS.data.NATIONALITIES = NATIONALITIES;
+  if (DCS.i18n) { try { DCS.i18n.bindFields(REGIONS, 'region', ['name']); } catch (e) {} }
   DCS.data.NICK_HEADS = NICK_HEADS;
   DCS.data.NICK_TAILS = NICK_TAILS;
   DCS.data.NICK_SOLO = NICK_SOLO;
@@ -4345,19 +4794,19 @@ a { color: var(--ember); }
     if (placement === 1) {
       if (template.kind === 'ti') return 'CAMPEÓN DE THE INTERNATIONAL';
       if (template.kind === 'international' || template.kind === 'elite') return 'Campeón internacional';
-      if (template.kind === 'qualifier') return closed ? 'Clasificado al evento' : 'Clasificado';
-      return 'Campeón';
+      if (template.kind === 'qualifier') return closed ? 'QUALIFIED_EVENT' : 'QUALIFIED';
+      return 'CHAMPION';
     }
     if (placement === 2) {
-      if (template.kind !== 'qualifier') return 'Subcampeón';
-      return passes ? 'Clasificado' : 'Eliminado en la final';
+      if (template.kind !== 'qualifier') return 'RUNNER_UP';
+      return passes ? 'QUALIFIED' : 'ELIMINATED_FINAL';
     }
-    if (placement === 3) return '3er puesto';
-    if (placement === 4) return '4º puesto';
-    if (placement <= 6) return '5º-6º puesto';
-    if (placement <= 8) return '7º-8º puesto';
-    if (placement <= 12) return '9º-12º puesto';
-    return placement + 'º puesto';
+    if (placement === 3) return 'PLACE_3';
+    if (placement === 4) return 'PLACE_4';
+    if (placement <= 6) return 'PLACE_5_6';
+    if (placement <= 8) return 'PLACE_7_8';
+    if (placement <= 12) return 'PLACE_9_12';
+    return 'PLACE:' + placement;
   }
 
   DCS.data = DCS.data || {};
@@ -4529,6 +4978,7 @@ a { color: var(--ember); }
         return {
           title: 'Rivalidad',
           tone: 'neutral',
+          vars: { rival: rival },
           text: 'La prensa regional lleva semanas alimentando el duelo entre tú y ' + rival +
             '. Cada vez que os cruzáis en un escenario hay más ruido del habitual.'
         };
@@ -4545,6 +4995,7 @@ a { color: var(--ember); }
         return {
           title: 'Alguien decide enseñarte',
           tone: 'good',
+          vars: { who: vet },
           text: vet + ' se ha tomado en serio tu desarrollo. Revisáis repeticiones juntos después de cada bloque de scrims.'
         };
       }
@@ -4587,6 +5038,7 @@ a { color: var(--ember); }
         return {
           title: 'Se rompe el roster',
           tone: 'bad',
+          vars: { who: who },
           text: who + ' abandona el equipo. Llega un sustituto y toca reconstruir la química desde cero.'
         };
       }
@@ -6518,11 +6970,18 @@ a { color: var(--ember); }
   /* Nombre de la ronda contando hacia atrás desde la final */
   function roundName(r, rounds) {
     var left = rounds - r;
-    if (left === 0) return 'Final';
-    if (left === 1) return 'Semifinal';
-    if (left === 2) return 'Cuartos de final';
-    if (left === 3) return 'Octavos de final';
-    return 'Ronda ' + r;
+    if (left === 0) return 'FINAL';
+    if (left === 1) return 'SEMIFINALS';
+    if (left === 2) return 'QUARTERFINALS';
+    if (left === 3) return 'ROUND_OF_16';
+    return 'ROUND:' + r;
+  }
+  function displayStage(stage) {
+    if (!stage) return '';
+    if (String(stage).indexOf('ROUND:') === 0) {
+      return (DCS.i18n && DCS.i18n.t('stage.ROUND_N', { n: String(stage).slice(6) }, 'Ronda ' + String(stage).slice(6))) || ('Ronda ' + String(stage).slice(6));
+    }
+    return (DCS.i18n && DCS.i18n.stage(stage)) || stage;
   }
 
   function formatLabel(fmt) {
@@ -6531,7 +6990,7 @@ a { color: var(--ember); }
   }
 
   function groupStageName(template) {
-    return template.kind === 'league' ? 'Liga regular' : 'Fase de grupos';
+    return template.kind === 'league' ? 'LEAGUE' : 'GROUP_STAGE';
   }
 
   /* En fase de grupos (no en liga regular) la tercera derrota elimina.
@@ -6543,7 +7002,10 @@ a { color: var(--ember); }
   }
 
   function isGroupStageLabel(stage) {
-    return stage === 'Fase de grupos' || stage === 'Liga regular';
+    var k = DCS.i18n ? DCS.i18n.stageKey(stage) : stage;
+    return k === 'GROUP_STAGE' || k === 'LEAGUE' ||
+      stage === 'Fase de grupos' || stage === 'Liga regular' ||
+      stage === 'Group Stage' || stage === 'Regular Season';
   }
 
   /** Recuento de series de grupos. Sirve también para partidas guardadas
@@ -6613,50 +7075,30 @@ a { color: var(--ember); }
     }
 
     var type = 'NORMAL';
-    var label = won === true ? 'VICTORIA' : (won === false ? 'DERROTA' : 'EMPATE');
 
     if (won === true) {
-      if (upset) {
-        type = 'UPSET';
-        label = 'GRAN VICTORIA · UPSET';
-      } else if (isComeback()) {
-        type = 'COMEBACK';
-        label = 'VICTORIA EN REMONTADA';
-      } else if (total >= 2 && l === 0 && w >= 2) {
-        type = 'DOMINANT';
-        label = 'VICTORIA DOMINANTE';
-      } else if (total >= 2 && l > 0 && w === l + 1) {
-        type = 'CLOSE';
-        label = 'VICTORIA AJUSTADA';
-      } else {
-        type = 'NORMAL';
-        label = 'VICTORIA';
-      }
+      if (upset) type = 'UPSET';
+      else if (isComeback()) type = 'COMEBACK';
+      else if (total >= 2 && l === 0 && w >= 2) type = 'DOMINANT';
+      else if (total >= 2 && l > 0 && w === l + 1) type = 'CLOSE';
+      else type = 'NORMAL';
     } else if (won === false) {
-      if (disappointing) {
-        type = 'DISAPPOINTING';
-        label = 'DERROTA DECEPCIONANTE';
-      } else if (total >= 2 && w === 0 && l >= 2) {
-        type = 'DOMINANT';
-        label = 'DERROTA CLARA';
-      } else if (total >= 2 && w > 0 && l === w + 1) {
-        type = 'CLOSE';
-        label = 'DERROTA AJUSTADA';
-      } else {
-        type = 'NORMAL';
-        label = 'DERROTA';
-      }
+      if (disappointing) type = 'DISAPPOINTING';
+      else if (total >= 2 && w === 0 && l >= 2) type = 'DOMINANT';
+      else if (total >= 2 && w > 0 && l === w + 1) type = 'CLOSE';
+      else type = 'NORMAL';
     }
 
-    return {
+    var rt = {
       result: result,
       type: type,
-      label: label,
-      verdict: won === true ? 'VICTORIA' : (won === false ? 'DERROTA' : 'EMPATE'),
       upset: upset,
       disappointing: disappointing,
       comeback: type === 'COMEBACK'
     };
+    rt.label = (DCS.i18n && DCS.i18n.matchType(rt)) || (won === true ? 'VICTORIA' : (won === false ? 'DERROTA' : 'EMPATE'));
+    rt.verdict = (DCS.i18n && DCS.i18n.matchVerdict(rt)) || rt.label;
+    return rt;
   }
 
   function playSeries(state, rng, live, team, oppLevel, format, stage, opponent, oppIndex) {
@@ -6805,7 +7247,7 @@ a { color: var(--ember); }
       field: template.field,
       placement: placement,
       result: live.elimReason === 'groups'
-        ? 'Eliminado en fase de grupos'
+        ? 'ELIMINATED_GROUPS'
         : D.resultLabel(placement, template.field, template),
       qualified: live.elimReason === 'groups' ? false : qualified,
       eliminated: !!live.eliminated,
@@ -7131,8 +7573,8 @@ a { color: var(--ember); }
     if (live.eliminated || live.elimReason === 'groups') {
       return {
         code: 'ELIMINATED_GROUPS',
-        label: 'ELIMINADO EN FASE DE GRUPOS',
-        detail: 'Has quedado eliminado en la fase de grupos. ' +
+        label: 'ELIMINATED_GROUPS',
+        detail: 'ELIMINATED_GROUPS' +
           gr.wins + ' victorias — ' + gr.losses + ' derrotas',
         tone: 'bad'
       };
@@ -7149,11 +7591,14 @@ a { color: var(--ember); }
         var round = last.stage || 'Playoffs';
         return {
           code: 'ELIMINATED',
-          label: 'ELIMINADO',
-          detail: round.indexOf('Cuartos') >= 0 ? 'Eliminado en cuartos'
-            : (round.indexOf('Semifinal') >= 0 ? 'Eliminado en semifinales'
-              : (round.indexOf('Final') >= 0 ? 'Subcampeón / eliminado en la final'
-                : 'Eliminado · ' + round)),
+          label: 'ELIMINATED',
+          detail: (function () {
+            var rk = DCS.i18n ? DCS.i18n.stageKey(round) : round;
+            if (rk === 'QUARTERFINALS' || String(round).indexOf('Cuartos') >= 0 || String(round).indexOf('Quarter') >= 0) return 'ELIMINATED_QF';
+            if (rk === 'SEMIFINALS' || String(round).indexOf('Semifinal') >= 0) return 'ELIMINATED_SF';
+            if (rk === 'FINAL' || String(round).indexOf('Final') >= 0) return 'ELIMINATED_FINAL';
+            return 'ELIMINATED';
+          })(),
           tone: 'bad'
         };
       }
@@ -7205,7 +7650,7 @@ a { color: var(--ember); }
       if (won === false) {
         return {
           code: 'ELIMINATED',
-          label: 'ELIMINADO',
+          label: 'ELIMINATED',
           detail: last.stage,
           tone: 'bad'
         };
@@ -7378,6 +7823,8 @@ a { color: var(--ember); }
     buildField: buildField,
     label: label,
     formatLabel: formatLabel,
+    displayStage: displayStage,
+    groupStageName: groupStageName,
     roundName: roundName,
     bracketPath: bracketPath,
     groupRecord: groupRecord,
@@ -8939,7 +9386,7 @@ a { color: var(--ember); }
     var tiQual = tours.some(function (t) { return t.key === 'ti_qual' && t.qualified; }) ||
       !!(season.comp && season.comp.ti && season.comp.ti.direct);
     var earlyExit = tours.some(function (t) {
-      return t.eliminated || t.result === 'Eliminado en fase de grupos' ||
+      return t.eliminated || (t.result === 'ELIMINATED_GROUPS' || t.result === 'Eliminado en fase de grupos' || t.result === 'Eliminated in Group Stage') ||
         (t.placement && t.field && t.placement > t.field * 0.6 && t.prestige >= 6);
     });
     var upsetWin = !!(season.flags && season.flags.upsetWin);
@@ -9084,9 +9531,18 @@ a { color: var(--ember); }
       title: built.title,
       text: built.text,
       tone: built.tone || 'neutral',
+      vars: built.vars || {},
+      textKey: built.textKey || null,
       category: chosen.category || 'CAREER',
       rarity: chosen.rarity || 'common',
-      options: (built.options || []).map(function (o) { return { label: o.label, hint: o.hint }; }),
+      options: (built.options || []).map(function (o, oi) {
+        return {
+          label: o.label,
+          hint: o.hint,
+          labelKey: o.labelKey || ('events.' + chosen.id + '.opt' + oi + '.label'),
+          hintKey: o.hintKey || ('events.' + chosen.id + '.opt' + oi + '.hint')
+        };
+      }),
       resolved: !built.options || !built.options.length,
       applied: !built.options || !built.options.length,
       outcome: null
@@ -11202,10 +11658,10 @@ a { color: var(--ember); }
     phaseLabel: function () {
       var s = game.state;
       if (!s || s.finished) return 'Carrera finalizada';
-      if (s.pending && s.pending.type === 'retirement') return '¿Ha llegado el momento?';
-      if (s.pending && s.pending.type === 'event') return 'Decisión pendiente';
-      if (s.pending && s.pending.type === 'wealth') return 'Oportunidad financiera';
-      if (s.pending && s.pending.type === 'tournament') return s.season.liveTour ? s.season.liveTour.name : 'Torneo';
+      if (s.pending && s.pending.type === 'retirement') return (DCS.i18n && DCS.i18n.t('modal.retireQ')) || '¿Ha llegado el momento?';
+      if (s.pending && s.pending.type === 'event') return (DCS.i18n && DCS.i18n.t('modal.pendingEvent')) || 'Decisión pendiente';
+      if (s.pending && s.pending.type === 'wealth') return (DCS.i18n && DCS.i18n.t('modal.pendingWealth')) || 'Oportunidad financiera';
+      if (s.pending && s.pending.type === 'tournament') return s.season.liveTour ? s.season.liveTour.name : ((DCS.i18n && DCS.i18n.t('modal.pendingTour')) || 'Torneo');
       var ph = s.season ? s.season.phase : 'preseason';
       if (ph === 'done') return 'Pretemporada';
       return DCS.engine.season.PHASE_LABEL[ph] || ph;
@@ -11378,7 +11834,7 @@ a { color: var(--ember); }
   }
 
   function tierBadge(tier) {
-    if (!tier) return badge('Sin equipo', 'muted');
+    if (!tier) return badge(DCS.t('common.noTeam'), 'muted');
     return badge('TIER ' + tier, 't' + tier);
   }
 
@@ -11568,7 +12024,7 @@ a { color: var(--ember); }
   /** [logo] Nombre. size: 'sm' (~28px) | 'md' (~48px) */
   function teamMark(ref, size) {
     if (!ref) {
-      return '<span class="team-mark team-mark-sm muted">Sin equipo</span>';
+      return '<span class="team-mark team-mark-sm muted">' + DCS.t('common.noTeam') + '</span>';
     }
     var id = typeof ref === 'string' ? ref : (ref.id || ref.teamId);
     var name = typeof ref === 'string' ? ref : (ref.name || ref.teamName);
@@ -11577,7 +12033,7 @@ a { color: var(--ember); }
       if (!name) name = cat.name;
       if (!id) id = cat.id;
     }
-    if (!name) name = 'Sin equipo';
+    if (!name) name = DCS.t('common.noTeam');
     var src = null;
     if (DCS.data.teamLogo) src = DCS.data.teamLogo(typeof ref === 'object' ? ref : { id: id, name: name });
     if (!src && ref && ref.logo) src = ref.logo;
@@ -11935,6 +12391,28 @@ a { color: var(--ember); }
 
   var c = DCS.ui.c, fmt = DCS.ui.fmt, D = DCS.data;
   var S = DCS.ui.screens = DCS.ui.screens || {};
+  var t = function (key, vars, fallback) {
+    return DCS.t ? DCS.t(key, vars, fallback) : (fallback || '');
+  };
+  var tResult = function (label) {
+    if (!label) return '';
+    if (String(label).indexOf('PLACE:') === 0) {
+      return t('result.PLACE_N', { n: String(label).slice(6) }, String(label).slice(6) + 'º puesto');
+    }
+    return (DCS.i18n && DCS.i18n.result(label)) || label;
+  };
+  var tStage = function (stage) {
+    if (!stage) return '';
+    if (DCS.engine && DCS.engine.tournaments && DCS.engine.tournaments.displayStage) {
+      return DCS.engine.tournaments.displayStage(stage);
+    }
+    return (DCS.i18n && DCS.i18n.stage(stage)) || stage;
+  };
+  var tMatch = function (rt) {
+    if (!rt) return '';
+    return (DCS.i18n && DCS.i18n.matchType(rt)) || rt.label || '';
+  };
+  if (DCS.i18n) DCS.i18n.init();
 
   function mapCreep(side, role, extra) {
     return '<span class="mc ' + side + ' ' + role + (extra ? ' ' + extra : '') + '">' +
@@ -11956,6 +12434,9 @@ a { color: var(--ember); }
   /* ---------------------------------------------------------
      INICIO
      --------------------------------------------------------- */
+
+  /* DCS_I18N_DISPLAY_HELPERS: t/tResult/tStage/tMatch injected above */
+
   S.home = function () {
     var save = DCS.store.peek();
     var html = '<div class="hero-stage">' +
@@ -12009,23 +12490,24 @@ a { color: var(--ember); }
       '<h1>Road to Immortal</h1>' +
       '<span class="hero-title-mark right" aria-hidden="true"></span>' +
       '</div>' +
-      '<p class="hero-lead">Construye tu carrera. Cada temporada puede cambiarlo todo.</p>' +
+      '<p class="hero-lead">' + t('home.lead') + '</p>' +
       '<div class="hero-actions">' +
-      c.btn('Nueva carrera', 'new-career', { variant: 'primary', size: 'lg' }) +
-      (save ? c.btn('Continuar carrera', 'continue', { size: 'lg' }) : '') +
+      c.btn(t('home.newCareer'), 'new-career', { variant: 'primary', size: 'lg' }) +
+      (save ? c.btn(t('home.continueCareer'), 'continue', { size: 'lg' }) : '') +
       '</div>';
 
     if (save) {
       html += '<div class="hero-quiet">' +
-        c.btn('Borrar y empezar de cero', 'wipe', { variant: 'danger' }) +
+        c.btn(t('home.wipe'), 'wipe', { variant: 'danger' }) +
         '</div>';
     }
 
     if (!DCS.store.persistent) {
-      html += '<p class="hero-note">Tu navegador ha bloqueado el almacenamiento local; la partida solo vivirá en esta pestaña.</p>';
+      html += '<p class="hero-note">' + t('home.storageBlocked') + '</p>';
     }
     html += '<div class="hero-foot">' +
-      '<button type="button" class="about-link" data-action="open-about">Acerca de</button>' +
+      '<button type="button" class="about-link" data-action="open-about">' + t('home.about') + '</button>' +
+      (DCS.i18n ? DCS.i18n.langSwitch() : '') +
       '</div>';
     html += '</div></div>';
     return html;
@@ -12038,56 +12520,51 @@ a { color: var(--ember); }
     var medalSrc = (DCS.assetsInline && DCS.assetsInline['ancestral-i']) ||
       'assets/ranks/ancestral-i.png';
     var medal = '<div class="creator-medal">' +
-      '<img src="' + medalSrc + '" alt="Medalla Ancestral I" width="110" height="92" loading="lazy">' +
-      '<span class="medal-label">Ancestral I</span>' +
+      '<img src="' + medalSrc + '" alt="' + t('about.medalAlt') + '" width="110" height="92" loading="lazy">' +
+      '<span class="medal-label">' + t('about.medal') + '</span>' +
       '</div>';
 
     return '<div class="about-page">' +
       '<div class="about-top">' +
       '<div class="about-brand"><i></i><span>DOTA 2</span><b>CAREER</b></div>' +
-      c.btn('Volver', 'go-home', { variant: 'ghost' }) +
+      '<div class="about-top-actions">' + (DCS.i18n ? DCS.i18n.langSwitch() : '') +
+      c.btn(t('about.back'), 'go-home', { variant: 'ghost' }) + '</div>' +
       '</div>' +
 
       '<header class="about-hero">' +
-      '<div class="about-kicker">DOTA 2 Career Sim</div>' +
-      '<h1 class="about-tagline"><span>Tu carrera.</span><span>Tus decisiones.</span><span>Tu legado.</span></h1>' +
-      '<p class="about-lead">Un simulador de carrera inspirado en el ecosistema competitivo de Dota 2. ' +
-      'No empiezas como una leyenda. Empiezas intentando convertirte en una.</p>' +
+      '<div class="about-kicker">' + t('about.kicker') + '</div>' +
+      '<h1 class="about-tagline"><span>' + t('about.tag1') + '</span><span>' + t('about.tag2') + '</span><span>' + t('about.tag3') + '</span></h1>' +
+      '<p class="about-lead">' + t('about.lead') + '</p>' +
       '</header>' +
 
       '<section class="about-section">' +
-      '<h3>Empieza desde abajo</h3>' +
-      '<p>Elige dónde comenzar tu carrera, entra en el mercado como agente libre y compara ofertas de tu región. ' +
-      'Nadie te asigna un equipo: tú decides dónde firmar tu primer contrato.</p>' +
-      '<p>Tu rendimiento importa. Una buena temporada puede abrirte puertas; una mala puede obligarte a bajar de nivel, ' +
-      'aceptar contratos inferiores o reconstruir desde abajo.</p>' +
+      '<h3>' + t('about.s1Title') + '</h3>' +
+      '<p>' + t('about.s1p1') + '</p>' +
+      '<p>' + t('about.s1p2') + '</p>' +
       '</section>' +
 
       '<section class="about-section">' +
-      '<h3>Construye tu carrera</h3>' +
-      '<p>A lo largo de los años compites, mejoras, negocias contratos, cambias de equipo y gestionas tu reputación. ' +
-      'Clasificatorias regionales, torneos, grandes escenarios y The International marcan el ritmo de cada temporada.</p>' +
-      '<p>Puedes convertirte en una estrella, cambiar de región, ganar títulos, caer en desgracia o protagonizar un comeback. ' +
-      'El mercado responde a lo que demuestras.</p>' +
+      '<h3>' + t('about.s2Title') + '</h3>' +
+      '<p>' + t('about.s2p1') + '</p>' +
+      '<p>' + t('about.s2p2') + '</p>' +
       '</section>' +
 
       '<section class="about-section">' +
-      '<h3>Deja tu legado</h3>' +
-      '<p>El objetivo no es solo ganar partidas. Es construir una historia. ' +
-      'Cada carrera puede contarse de forma distinta: las decisiones que tomas dejan huella hasta el día en que cuelgas el ratón.</p>' +
+      '<h3>' + t('about.s3Title') + '</h3>' +
+      '<p>' + t('about.s3p1') + '</p>' +
       '<div class="about-path" aria-hidden="true">' +
-      '<span>Empiezas abajo</span><i>↓</i>' +
-      '<span>Oportunidades</span><i>↓</i>' +
-      '<span>Decisiones</span><i>↓</i>' +
-      '<span>Compites</span><i>↓</i>' +
-      '<span>Subes o caes</span><i>↓</i>' +
-      '<span>Legado</span>' +
+      '<span>' + t('about.path1') + '</span><i>↓</i>' +
+      '<span>' + t('about.path2') + '</span><i>↓</i>' +
+      '<span>' + t('about.path3') + '</span><i>↓</i>' +
+      '<span>' + t('about.path4') + '</span><i>↓</i>' +
+      '<span>' + t('about.path5') + '</span><i>↓</i>' +
+      '<span>' + t('about.path6') + '</span>' +
       '</div>' +
-      '<p class="about-close-q">¿Hasta dónde puedes llegar?</p>' +
+      '<p class="about-close-q">' + t('about.closeQ') + '</p>' +
       '</section>' +
 
-      '<aside class="creator-card" aria-label="Créditos del creador">' +
-      '<div class="creator-kicker">Creado por</div>' +
+      '<aside class="creator-card" aria-label="' + t('about.creditsAria') + '">' +
+      '<div class="creator-kicker">' + t('about.createdBy') + '</div>' +
       '<p class="creator-name">Lester Daviel Gutiérrez Vidal</p>' +
       '<div class="creator-nick">¨desiigner¨</div>' +
       medal +
@@ -12107,13 +12584,13 @@ a { color: var(--ember); }
       .replace('width="40"', 'width="80"')
       .replace('height="28"', 'height="56"');
     var nickShow = ((draft.nick || 'nick').trim() || 'nick').toUpperCase();
-    var nameShow = (draft.name || 'sin nombre').trim() || 'sin nombre';
+    var nameShow = (draft.name || t('create.noName')).trim() || t('create.noName');
     var hints = {
-      carry: 'Farm · Escalado · Daño',
-      mid: 'Mecánicas · Tempo · Dominio',
-      offlane: 'Iniciación · Espacio · Teamfight',
-      pos4: 'Rotaciones · Playmaking · Control',
-      pos5: 'Visión · Teamplay · Liderazgo'
+      carry: t('create.hints.carry'),
+      mid: t('create.hints.mid'),
+      offlane: t('create.hints.offlane'),
+      pos4: t('create.hints.pos4'),
+      pos5: t('create.hints.pos5')
     };
     var hidden = '<input type="hidden" id="f-region" value="' + c.esc(draft.region) + '">' +
       '<input type="hidden" id="f-nat" value="' + c.esc(draft.nationality) + '">';
@@ -12187,8 +12664,8 @@ a { color: var(--ember); }
       '</section>' +
 
       '<section class="create-col origin">' +
-      '<h3>Nacionalidad</h3>' +
-      '<input id="f-nat-search" type="search" placeholder="Buscar país" autocomplete="off" value="' + c.esc(draft.natQuery || '') + '">' +
+      '<h3>' + t('create.country') + '</h3>' +
+      '<input id="f-nat-search" type="search" placeholder="' + t('create.searchCountry') + '" autocomplete="off" value="' + c.esc(draft.natQuery || '') + '">' +
       '<div class="nat-grid">' + nats + '</div>' +
       '<p class="nat-empty" hidden>No se encontraron países</p>' +
       '</section>' +
@@ -12199,14 +12676,14 @@ a { color: var(--ember); }
       '</section>' +
 
       '<section class="create-col style">' +
-      '<h3>Estilo</h3>' +
+      '<h3>' + t('create.style') + '</h3>' +
       '<div class="arch-row">' + archs + '</div>' +
       '</section>' +
 
       '</div>' +
       '<div class="create-foot">' +
       c.btn('Volver', 'go-home', { variant: 'ghost' }) +
-      c.btn('Confirmar identidad', 'create-confirm', { variant: 'primary', size: 'lg' }) +
+      c.btn(t('create.confirm'), 'create-confirm', { variant: 'primary', size: 'lg' }) +
       '</div></div></div>';
   };
 
@@ -12249,7 +12726,7 @@ a { color: var(--ember); }
       ]) +
         '<div class="mt">' + c.tiles([
           c.tile('Equipo', team ? c.teamMark(team, 'sm') : '<span class="muted">Libre</span>',
-            team ? D.REGIONS[team.region].name : 'agente libre'),
+            team ? D.REGIONS[team.region].name : t('common.freeAgent')),
           c.tile('Posición', role.short, role.name),
           c.tile('Forma', Math.round(p.form), estado(p.form), tone(p.form)),
           c.tile('Moral', Math.round(p.morale), estado(p.morale), tone(p.morale)),
@@ -12264,7 +12741,7 @@ a { color: var(--ember); }
       contract = c.card({
         title: 'Contrato', meta: c.badge(p.contract.years + (p.contract.years === 1 ? ' año' : ' años'), 'info'),
         body: '<div class="kv"><span>Equipo</span><span>' + c.teamMark(team, 'sm') + '</span></div>' +
-          '<div class="kv"><span>Salario anual</span><span>' + fmt.moneyFull(p.contract.salary) + '</span></div>' +
+          '<div class="kv"><span>' + t('market.salaryAnnual') + '</span><span>' + fmt.moneyFull(p.contract.salary) + '</span></div>' +
           '<div class="kv"><span>Reparto de premios</span><span>' +
           Math.round((typeof p.contract.prizeShare === 'number' ? p.contract.prizeShare : D.DEFAULT_PRIZE_SHARE) * 100) +
           '% del premio del equipo</span></div>' +
@@ -12276,13 +12753,11 @@ a { color: var(--ember); }
     } else {
       var debutPending = state.offers && state.offers.length && !(p.teamsPlayed && p.teamsPlayed.length);
       contract = c.card({
-        title: debutPending ? 'Mercado de debut' : 'Situación contractual',
+        title: debutPending ? t('market.debutMarket') : t('dash.contractStatus'),
         body: (debutPending
-          ? '<p class="muted small">Eres agente libre. Tu región fija el mercado de entrada: ' +
-            'compara contratos y firma el primero cuando quieras. Nadie te asigna un equipo.</p>' +
-            c.btn('Ver ofertas de debut', 'nav', { value: 'offers', variant: 'primary' })
-          : '<p class="muted small">Eres agente libre. Sin equipo no hay mapas oficiales: ' +
-            'grindeas pubs y esperas que alguien se fije en ti en el mercado.</p>') +
+          ? '<p class="muted small">' + t('dash.faIntro', { region: (D.REGIONS[state.career.startingRegion] && D.REGIONS[state.career.startingRegion].name) || '' }) + '</p>' +
+            c.btn(t('market.viewDebutOffers'), 'nav', { value: 'offers', variant: 'primary' })
+          : '<p class="muted small">' + t('dash.faNoMapsFull') + '</p>') +
           '<div class="kv"><span>Temporadas sin equipo</span><span>' + p.seasonsWithoutTeam + '</span></div>' +
           (state.career && state.career.startingRegion
             ? '<div class="kv"><span>Región de entrada</span><span>' +
@@ -12343,7 +12818,7 @@ a { color: var(--ember); }
     var r = state.lastReport;
     if (!r) {
       return c.card({
-        title: 'Próximo paso',
+        title: t('dash.nextStep'),
         body: '<p class="muted">Tu carrera empieza aquí. Pulsa <b>' + DCS.game.nextLabel() +
           '</b> abajo a la derecha (o la barra espaciadora) para avanzar.</p>'
       });
@@ -12399,8 +12874,8 @@ a { color: var(--ember); }
       var a = r.totals.avg, acc = r.totals.acc;
       body += c.kpis([
         c.kpi('Mapas', acc.maps),
-        c.kpi('Victorias', acc.wins, null, 'good'),
-        c.kpi('Derrotas', acc.losses, null, 'bad'),
+        c.kpi(t('match.wins'), acc.wins, null, 'good'),
+        c.kpi(t('match.losses'), acc.losses, null, 'bad'),
         c.kpi('Winrate', fmt.pct(a.winrate), null, null, { v: a.winrate, fmt: 'pct' }),
         c.kpi('Series', r.tournaments.reduce(function (s, t) { return s + t.seriesPlayed; }, 0)),
         c.kpi('KDA', fmt.dec(a.kda, 2), null, null, { v: a.kda, fmt: 'dec2' })
@@ -12431,7 +12906,7 @@ a { color: var(--ember); }
           c.tile('Equipo', c.teamMark({ id: ti.teamId, name: ti.teamName }, 'sm')),
           c.tile('Mapas', ti.maps, ti.wins + '-' + ti.losses),
           c.tile('Series', ti.seriesPlayed, ti.seriesWon + '-' + ti.seriesLost),
-          c.tile('Posición final', fmt.ordinal(ti.placement)),
+          c.tile(t('tour.finalPosition'), fmt.ordinal(ti.placement)),
           c.tile('Premio', fmt.money(ti.prize), null, 'gold', { v: ti.prize, fmt: 'money' }),
           c.tile('Rating', ti.rating)
         ]) +
@@ -12450,7 +12925,7 @@ a { color: var(--ember); }
     var left = '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">' +
       DCS.ui.charts.ring(r.rating, 'Rating de temporada') +
       '<div style="flex:1;min-width:180px">' +
-      '<div class="row" style="margin-bottom:10px">' + c.badge(rec.bestResult, rec.titles ? 'gold' : 'muted') + '</div>' +
+      '<div class="row" style="margin-bottom:10px">' + c.badge(tResult(rec.bestResult), rec.titles ? 'gold' : 'muted') + '</div>' +
       '<div class="kv"><span>Reputación</span><span>' + Math.round(p.reputation) + ' (' + fmt.signed(r.repDelta) + ')</span></div>' +
       '<div class="kv"><span>Valoración</span><span>' + p.overall + ' (' + fmt.signed(p.overall - r.dev.overallBefore) + ')</span></div>' +
       '<div class="kv"><span>MMR</span><span>' + fmt.mmr(p.mmr) + '</span></div>' +
@@ -12474,13 +12949,13 @@ a { color: var(--ember); }
 
     if (rec.acc.maps) {
       cards += c.card({
-        title: 'Cómo te ha evaluado el circuito',
+        title: t('dash.howRated'),
         subtitle: 'Tus promedios frente al baremo de un ' + D.ROLES[rec.role].name + '. Esto es lo que pesa en tu rating.',
         body: c.statBars(rec.role, avg), delay: 60
       });
     }
     cards += c.card({ title: 'Desarrollo', subtitle: 'Cambio de atributos en la temporada.', body: dev, delay: 120 });
-    if (r.event) cards += c.card({ title: 'Y además…', body: eventHtml(r.event), delay: 180 });
+    if (r.event) cards += c.card({ title: t('dash.andAlso'), body: eventHtml(r.event), delay: 180 });
     return cards;
   };
 
@@ -12488,8 +12963,8 @@ a { color: var(--ember); }
     var body;
     if (!r.offers.length) {
       body = '<p class="muted">' + (r.hasTeam
-        ? 'Nadie ha llamado a tu puerta este año. Sigues donde estás.'
-        : 'Ningún equipo te ha hecho una oferta. El teléfono no suena.') + '</p>' +
+        ? t('dash.noCalls')
+        : t('dash.noOffers')) + '</p>' +
         /* si el mercado se abrió y aun así nadie llamó, conviene saber por qué */
         (r.quiet
           ? '<div class="row">' + c.btn('Ver estado del mercado', 'nav', { value: 'offers', variant: 'ghost' }) + '</div>'
@@ -12575,6 +13050,27 @@ a { color: var(--ember); }
 
   var c = DCS.ui.c, fmt = DCS.ui.fmt, D = DCS.data, U = DCS.util;
   var S = DCS.ui.screens = DCS.ui.screens || {};
+  var t = function (key, vars, fallback) {
+    return DCS.t ? DCS.t(key, vars, fallback) : (fallback || '');
+  };
+  var tResult = function (label) {
+    if (!label) return '';
+    if (String(label).indexOf('PLACE:') === 0) {
+      return t('result.PLACE_N', { n: String(label).slice(6) }, String(label).slice(6) + 'º puesto');
+    }
+    return (DCS.i18n && DCS.i18n.result(label)) || label;
+  };
+  var tStage = function (stage) {
+    if (!stage) return '';
+    if (DCS.engine && DCS.engine.tournaments && DCS.engine.tournaments.displayStage) {
+      return DCS.engine.tournaments.displayStage(stage);
+    }
+    return (DCS.i18n && DCS.i18n.stage(stage)) || stage;
+  };
+  var tMatch = function (rt) {
+    if (!rt) return '';
+    return (DCS.i18n && DCS.i18n.matchType(rt)) || rt.label || '';
+  };
   var ch = function () { return DCS.ui.charts; };
 
   function pnlClass(n) {
@@ -12734,7 +13230,7 @@ a { color: var(--ember); }
       ? DCS.engine.tournaments.groupRecord(live)
       : { wins: live.groupWins || 0, losses: live.groupLosses || 0 };
     var eliminatedGroups = !!(live.eliminated || live.elimReason === 'groups' ||
-      (live.done && live.record && live.record.result === 'Eliminado en fase de grupos'));
+      (live.done && live.record && (live.record.result === 'ELIMINATED_GROUPS' || live.record.result === 'Eliminado en fase de grupos')));
 
     var region = live.region ? D.regionName(live.region) : 'Internacional';
     var accessBadge = '';
@@ -12743,7 +13239,7 @@ a { color: var(--ember); }
     else if (live.access === 'open') accessBadge = c.badge('Vía Open Qualifier', 'info');
     var head = '<div class="page-head"><div><div class="eyebrow">Serie a serie</div><h2>' + c.esc(live.name) + '</h2>' +
       '<p>' + (eliminatedGroups
-        ? 'Eliminado en fase de grupos'
+        ? tResult('ELIMINATED_GROUPS')
         : (next ? c.esc(next.stage) : (live.record ? c.esc(live.record.result) : 'Torneo cerrado'))) + '</p></div>' +
       '<div class="head-right">' + c.levelBadge(live.level || (tpl && tpl.level)) +
       c.badge(region, 'muted') +
@@ -12759,7 +13255,7 @@ a { color: var(--ember); }
       vs = '<div class="match-vs">' +
         '<div class="match-side">' + c.teamMark(me, 'md') + '<span class="match-name">' + c.esc(me.name) + '</span></div>' +
         '<div class="match-mid">' +
-          '<div class="match-stage">' + c.esc(show.stage) + '</div>' +
+          '<div class="match-stage">' + c.esc(tStage(show.stage)) + '</div>' +
           '<div class="match-score">0-0</div>' +
           '<div class="match-fmt">' + c.esc(show.formatLabel || DCS.engine.tournaments.formatLabel(show.format)) + '</div>' +
         '</div>' +
@@ -12778,7 +13274,7 @@ a { color: var(--ember); }
       var isWin = last.won === true;
       var isLoss = last.won === false;
       var verdict = (rt && rt.verdict) || (isWin ? 'VICTORIA' : (isLoss ? 'DERROTA' : 'EMPATE'));
-      var typeLabel = rt && rt.label ? rt.label : '';
+      var typeLabel = rt ? tMatch(rt) : '';
       /* El tipo especial no sustituye VICTORIA/DERROTA; va debajo del marcador. */
       if (typeLabel === verdict) typeLabel = '';
       var toneCls = isWin ? 'is-win' : (isLoss ? 'is-loss' : 'is-draw');
@@ -12818,16 +13314,17 @@ a { color: var(--ember); }
           '<div class="mr-team is-away">' + c.teamMark(oppTeam, 'md') + '</div>' +
         '</div>' +
         (typeLabel ? '<div class="mr-type">' + c.esc(typeLabel) + '</div>' : '') +
-        '<div class="mr-meta">' + c.esc(live.name) + (last.stage ? ' · ' + c.esc(last.stage) : '') + '</div>' +
+        '<div class="mr-meta">' + c.esc(live.name) + (last.stage ? ' · ' + c.esc(tStage(last.stage)) : '') + '</div>' +
         (cons ? '<div class="mr-consequence">' + c.esc(cons.label) + '</div>' : '') +
-        (cons && cons.detail ? '<p class="mr-detail">' + c.esc(cons.detail) + '</p>' : '') +
+        (cons && cons.detail ? '<p class="mr-detail">' + c.esc(tResult(cons.detail) || cons.detail) + '</p>' : '') +
         deltasHtml + nextLine + '</div>';
     } else if (eliminatedGroups) {
       resultBlock = '<div class="elim-banner">' +
-        '<div class="elim-title">ELIMINADO</div>' +
-        '<p>Has quedado eliminado en la fase de grupos.</p>' +
-        '<p class="elim-record">Resultado: <b>' + groupRec.wins + ' victorias — ' +
-        groupRec.losses + ' derrotas</b></p></div>';
+        '<div class="elim-title">' + t('tour.eliminated') + '</div>' +
+        '<p>' + t('tour.eliminatedGroups') + '</p>' +
+        '<p class="elim-record">' + t('tour.finalPosition') + ': <b>' +
+        t('common.wins', { count: groupRec.wins }) + ' — ' +
+        t('common.losses', { count: groupRec.losses }) + '</b></p></div>';
     } else if (live.done && live.record) {
       resultBlock = '<div class="match-result ' + (live.record.placement === 1 ? 'is-win' : 'is-loss') + '">' +
         '<div class="mr-verdict">' + (live.record.placement === 1 ? 'CAMPEÓN' : c.esc(live.record.result)) + '</div>' +
@@ -12863,7 +13360,7 @@ a { color: var(--ember); }
     }).join('') + '</div>';
 
     if (live.done && live.record) {
-      stagesHtml += '<p class="mt"><b>Posición final:</b> ' + c.esc(live.record.result) +
+      stagesHtml += '<p class="mt"><b>' + t('tour.finalPosition') + ':</b> ' + c.esc(tResult(live.record.result)) +
         ' · ' + live.record.seriesWon + '-' + live.record.seriesLost + ' series</p>';
     }
 
@@ -12976,7 +13473,7 @@ a { color: var(--ember); }
     var raw = (comp && comp.plan) || (state.season && state.season.plan) || [];
     if (!raw.length) {
       return c.card({
-        title: 'Calendario del año',
+        title: t('season.yearCalendar'),
         body: '<p class="muted small">Todavía no hay calendario. Se sortea en la pretemporada.</p>'
       });
     }
@@ -13031,10 +13528,10 @@ a { color: var(--ember); }
       var tiState = 'Por decidir';
       if (comp && comp.tiRecord) tiState = comp.tiRecord.result;
       else if (ti && ti.tiStarted) tiState = 'En juego';
-      else if (ti && ti.direct) tiState = ti.via || 'Invitación directa';
+      else if (ti && ti.direct) tiState = ti.via || t('tour.directInvite');
       else if (ti && ti.qualStarted) tiState = 'Clasificatorio disputado';
-      else if (ti && ti.eligible) tiState = 'Vía Regional Qualifier';
-      else if (ti && ti.rolled) tiState = 'Fuera de alcance este año';
+      else if (ti && ti.eligible) tiState = t('tour.viaRegional');
+      else if (ti && ti.rolled) tiState = t('tour.outOfReach');
       rows += tourRow({
         name: 'The International ' + state.year,
         meta: 'Internacional · Prize pool ' + fmt.money(D.prizePoolFor(state, tiTpl, state.year)),
@@ -13045,7 +13542,7 @@ a { color: var(--ember); }
     }
 
     return c.card({
-      title: 'Calendario del año',
+      title: t('season.yearCalendar'),
       meta: c.badge(state.year, 'info'),
       body: '<div class="tour-list">' + rows + '</div>'
     });
@@ -13079,7 +13576,7 @@ a { color: var(--ember); }
     var opinion = DCS.engine.player.scoutingOpinion(perceived);
     var careerAvg = DCS.engine.stats.averages(state.career.acc);
 
-    var head = '<div class="page-head"><div><h2>Perfil</h2><div class="sub">' +
+    var head = '<div class="page-head"><div><h2>' + t('nav.profile') + '</h2><div class="sub">' +
       c.esc(p.nick) + ' · ' + D.ARCHETYPES[p.archetype].name + ' · ' + p.age + ' años</div></div>' +
       '<div class="head-right">' + c.posChipFull(p.role) + c.badge('General ' + p.overall, 'info') + '</div></div>' +
       c.tabs([
@@ -13093,14 +13590,14 @@ a { color: var(--ember); }
       var ratings = state.history.map(function (h) { return { label: h.year, value: h.rating }; });
       var mmr = state.history.map(function (h) { return { label: h.year, value: h.mmrEnd }; });
       return head +
-        c.card({ title: 'Valoración general', subtitle: 'Tu nivel real año a año.', body: ch().sparkline(evo, { color: '#ff6b3d' }) }) +
+        c.card({ title: t('profile.overallVal'), subtitle: t('profile.yearByYear'), body: ch().sparkline(evo, { color: '#ff6b3d' }) }) +
         c.card({ title: 'Rating de temporada', subtitle: 'Cómo te evaluó el circuito cada año.', body: ch().sparkline(ratings, { color: '#1fd9b0', min: 0, max: 100 }), delay: 60 }) +
         c.card({ title: 'MMR', subtitle: 'Habilidad individual pura. Importa, pero no manda.', body: ch().sparkline(mmr, { color: '#4d9dff' }), delay: 120 });
     }
 
     if (tab === 'stats') {
       if (!state.career.acc || !state.career.acc.maps) {
-        return head + c.card({ title: 'Sin datos', body: c.empty('Todavía no has disputado mapas oficiales.') });
+        return head + c.card({ title: 'Sin datos', body: c.empty(t('profile.noOfficialMaps')) });
       }
       return head +
         c.card({
@@ -13108,7 +13605,7 @@ a { color: var(--ember); }
           body: c.statGrid(p.role, careerAvg)
         }) +
         c.card({
-          title: 'Frente al baremo de tu posición',
+          title: t('profile.vsBenchmark'),
           subtitle: 'Dónde caen tus números entre un jugador flojo y uno de élite en ' + role.name + '.',
           body: c.statBars(p.role, careerAvg), delay: 60
         });
@@ -13148,9 +13645,9 @@ a { color: var(--ember); }
   S.team = function (state) {
     var team = DCS.game.team();
     if (!team) {
-      return '<div class="page-head"><div><h2>Equipo</h2><div class="sub">Agente libre</div></div></div>' +
+      return '<div class="page-head"><div><h2>' + t('nav.team') + '</h2><div class="sub">Agente libre</div></div></div>' +
         c.card({
-          title: 'Sin equipo',
+          title: t('common.noTeam'),
           body: '<p class="muted">Ahora mismo no perteneces a ninguna organización. Grindeas pubs, ' +
             'juegas tryouts y esperas que alguien se fije en ti en el mercado.</p>' +
             '<div class="kv"><span>Temporadas seguidas sin equipo</span><span>' + state.player.seasonsWithoutTeam + '</span></div>'
@@ -13213,7 +13710,7 @@ a { color: var(--ember); }
     var rating = rec ? rec.rating : (s ? s.rating : null);
 
     var head = '<div class="page-head"><div><h2>' + title + '</h2><div class="sub">' +
-      D.ROLES[role].name + ' · ' + (rec ? c.teamMark({ id: rec.teamId, name: rec.teamName }, 'sm') : (DCS.game.team() ? c.teamMark(DCS.game.team(), 'sm') : 'Sin equipo')) +
+      D.ROLES[role].name + ' · ' + (rec ? c.teamMark({ id: rec.teamId, name: rec.teamName }, 'sm') : (DCS.game.team() ? c.teamMark(DCS.game.team(), 'sm') : t('common.noTeam'))) +
       '</div></div><div class="head-right">' + c.posChip(role) +
       (rating !== null && rating !== undefined ? c.ratingChip(rating) : '') + '</div></div>';
 
@@ -13279,8 +13776,8 @@ a { color: var(--ember); }
         meta: rating !== null && rating !== undefined ? c.ratingChip(rating) : '',
         body: c.kpis([
           c.kpi('Mapas', acc.maps),
-          c.kpi('Victorias', acc.wins, null, 'good'),
-          c.kpi('Derrotas', acc.losses, null, 'bad'),
+          c.kpi(t('match.wins'), acc.wins, null, 'good'),
+          c.kpi(t('match.losses'), acc.losses, null, 'bad'),
           c.kpi('Winrate', fmt.pct(avg.winrate), null, null, { v: avg.winrate, fmt: 'pct' }),
           c.kpi('Series', sp, sw + '-' + sl),
           c.kpi('Torneos', tournaments.filter(function (t) { return t.kind !== 'qualifier'; }).length)
@@ -13316,15 +13813,17 @@ a { color: var(--ember); }
 
   /* Etiquetas cualitativas: el jugador ve el diagnóstico, nunca la
      fórmula que hay detrás. */
-  var DEMAND_TEXT = {
-    LOW: ['BAJO', 'min'],
-    MEDIUM: ['MEDIO', 'lo'],
-    HIGH: ['ALTO', 'mid'],
-    VERY_HIGH: ['MUY ALTO', 'hi']
-  };
+  function demandPair(level) {
+    var key = level === 'VERY_HIGH' ? 'demandVeryHigh'
+      : (level === 'HIGH' ? 'demandHigh' : (level === 'MEDIUM' ? 'demandMedium' : 'demandLow'));
+    var fallback = level === 'VERY_HIGH' ? 'MUY ALTO' : (level === 'HIGH' ? 'ALTO' : (level === 'MEDIUM' ? 'MEDIO' : 'BAJO'));
+    return [t('market.' + key, null, fallback), level === 'VERY_HIGH' ? 'hi' : (level === 'HIGH' ? 'mid' : (level === 'MEDIUM' ? 'lo' : 'min'))];
+  }
 
   function level3(v) {
-    return v >= 70 ? 'ALTA' : (v >= 45 ? 'MEDIA' : 'BAJA');
+    if (v >= 70) return t('market.levelHigh', null, 'ALTA');
+    if (v >= 45) return t('market.levelMid', null, 'MEDIA');
+    return t('market.levelLow', null, 'BAJA');
   }
 
   /**
@@ -13336,7 +13835,7 @@ a { color: var(--ember); }
     var m = DCS.engine.market;
     if (!m || !m.profile) return '';
     var prof = m.profile(state);
-    var dem = DEMAND_TEXT[prof.demand.level] || DEMAND_TEXT.LOW;
+    var dem = demandPair(prof.demand.level);
     var rec = prof.record;
 
     /* la pista principal: lo que más pesa ahora mismo, en un renglón */
@@ -13346,11 +13845,11 @@ a { color: var(--ember); }
     if (prof.demand.index <= 1 && bad.length) lead = bad[0].text;
     else if (good.length) lead = good[0].text;
     else if (bad.length) lead = bad[0].text;
-    else lead = 'Los equipos aún no tienen suficiente de ti para decidirse.';
+    else lead = t('market.notEnoughSignal');
 
-    var rows = '<div class="kv"><span>Forma reciente</span><span class="' +
+    var rows = '<div class="kv"><span>' + t('market.recentForm') + '</span><span class="' +
       (prof.form >= 70 ? 'good' : (prof.form < 45 ? 'bad' : '')) + '">' + level3(prof.form) + '</span></div>' +
-      '<div class="kv"><span>Reputación</span><span>' + level3(prof.careerRep) + '</span></div>';
+      '<div class="kv"><span>' + t('dash.reputation') + '</span><span>' + level3(prof.careerRep) + '</span></div>';
 
     if (rec.series) {
       rows += '<div class="kv"><span>Últimas ' + rec.series + ' series</span><span class="mono">' +
@@ -13380,9 +13879,9 @@ a { color: var(--ember); }
 
     return c.card({
       title: 'Estado del mercado',
-      meta: c.badge('Interés ' + dem[0], prof.demand.index >= 2 ? 'good' : (prof.demand.index === 0 ? 'bad' : 'muted')),
+      meta: c.badge(t('market.interestBadge', { level: dem[0] }, 'Interés ' + dem[0]), prof.demand.index >= 2 ? 'good' : (prof.demand.index === 0 ? 'bad' : 'muted')),
       subtitle: c.esc(lead),
-      body: c.attrRow('Interés de los equipos', (prof.demand.index + 1) * 25) + '<div class="mt">' + rows + '</div>'
+      body: c.attrRow(t('market.teamInterest'), (prof.demand.index + 1) * 25) + '<div class="mt">' + rows + '</div>'
     });
   }
 
@@ -13391,22 +13890,22 @@ a { color: var(--ember); }
     if (p.teamId) return '';
     var fa = (DCS.engine.market.ensureFaMarket && DCS.engine.market.ensureFaMarket(state)) || state.faMarket || {};
     var prof = DCS.engine.market.profile(state);
-    var dem = DEMAND_TEXT[prof.demand.level] || DEMAND_TEXT.LOW;
+    var dem = demandPair(prof.demand.level);
     var regionId = (state.career && state.career.startingRegion) || p.homeRegion || p.region;
     var regionName = (D.REGIONS[regionId] && D.REGIONS[regionId].name) || regionId;
     var weeks = Math.floor((fa.daysIdle || 0) / 7);
     var reach = DCS.engine.market.marketReach ? DCS.engine.market.marketReach(state, prof) : 'regional';
-    var reachLabel = reach === 'international' ? 'Internacional' : (reach === 'multi' ? 'Multi-región' : 'Regional');
+    var reachLabel = reach === 'international' ? t('market.reachIntl') : (reach === 'multi' ? t('market.multiRegion') : t('market.reachRegional'));
     return c.card({
-      title: 'Free Agent',
-      meta: c.badge('Interés ' + dem[0], prof.demand.index >= 2 ? 'good' : (prof.demand.index === 0 ? 'bad' : 'muted')),
+      title: t('market.freeAgent'),
+      meta: c.badge(t('market.interestBadge', { level: dem[0] }, 'Interés ' + dem[0]), prof.demand.index >= 2 ? 'good' : (prof.demand.index === 0 ? 'bad' : 'muted')),
       body: '<div class="kv"><span>Región</span><span>' + c.esc(regionName) + '</span></div>' +
         '<div class="kv"><span>Alcance del mercado</span><span>' + c.esc(reachLabel) + '</span></div>' +
         '<div class="kv"><span>Ofertas activas</span><span>' + ((state.offers || []).length) + '</span></div>' +
         '<div class="kv"><span>Tiempo sin equipo</span><span>' +
-        (weeks <= 0 ? 'Recién llegado' : (weeks + (weeks === 1 ? ' semana' : ' semanas'))) +
+        (weeks <= 0 ? t('market.newcomer') : ((DCS.i18n && DCS.i18n.tn) ? DCS.i18n.tn('market.weeks', weeks, { count: weeks }, weeks + (weeks === 1 ? ' semana' : ' semanas')) : (weeks + (weeks === 1 ? ' semana' : ' semanas')))) +
         '</span></div>' +
-        c.attrRow('Interés del mercado', (prof.demand.index + 1) * 25)
+        c.attrRow(t('market.interest'), (prof.demand.index + 1) * 25)
     });
   }
 
@@ -13415,19 +13914,19 @@ a { color: var(--ember); }
     if (!fa || !fa.lastReport || !fa.lastReport.ok) return '';
     var r = fa.lastReport;
     var lines = [];
-    if (r.expired) lines.push(r.expired + (r.expired === 1 ? ' oferta ha expirado.' : ' ofertas han expirado.'));
-    if (r.withdrawn) lines.push(r.withdrawn + (r.withdrawn === 1 ? ' organización retiró su interés.' : ' organizaciones retiraron su interés.'));
-    if (r.improved) lines.push(r.improved + (r.improved === 1 ? ' oferta mejoró ligeramente.' : ' ofertas mejoraron ligeramente.'));
-    if (r.worsened) lines.push(r.worsened + (r.worsened === 1 ? ' oferta empeoró.' : ' ofertas empeoraron.'));
-    if (r.newCount) lines.push(r.newCount + (r.newCount === 1 ? ' nuevo equipo está interesado.' : ' nuevos equipos están interesados.'));
+    if (r.expired) lines.push(DCS.i18n.tn('market.expired', r.expired, { count: r.expired }));
+    if (r.withdrawn) lines.push(DCS.i18n.tn('market.withdrew', r.withdrawn, { count: r.withdrawn }));
+    if (r.improved) lines.push(DCS.i18n.tn('market.improved', r.improved, { count: r.improved }));
+    if (r.worsened) lines.push(DCS.i18n.tn('market.worsened', r.worsened, { count: r.worsened }));
+    if (r.newCount) lines.push(DCS.i18n.tn('market.newTeams', r.newCount, { count: r.newCount }));
     if (!lines.length) {
-      lines.push('No han llegado nuevas ofertas.');
-      lines.push('El mercado para tu posición está tranquilo.');
+      lines.push(t('market.noNewOffers'));
+      lines.push(t('market.marketQuiet'));
     }
     return c.card({
-      title: 'Han pasado ' + r.weeks + (r.weeks === 1 ? ' semana' : ' semanas'),
-      subtitle: 'El mercado de fichajes continúa moviéndose.',
-      meta: c.badge((r.active || 0) + ' activas', r.active ? 'gold' : 'muted'),
+      title: r.weeks === 1 ? t('market.weeksPassedOne') : t('market.weeksPassed', { count: r.weeks }),
+      subtitle: t('market.marketMoving'),
+      meta: c.badge(t('market.activeOffers', { count: r.active || 0 }), r.active ? 'gold' : 'muted'),
       body: '<ul class="lines">' + lines.map(function (t) { return '<li>' + c.esc(t) + '</li>'; }).join('') + '</ul>'
     });
   }
@@ -13439,14 +13938,14 @@ a { color: var(--ember); }
     var debutMarket = freeAgent && !(p.teamsPlayed && p.teamsPlayed.length);
     var mkt = DCS.engine.market;
 
-    var html = '<div class="page-head"><div><h2>Mercado</h2><div class="sub">' +
+    var html = '<div class="page-head"><div><h2>' + t('phase.market') + '</h2><div class="sub">' +
       (freeAgent
         ? (offers.length
-          ? (offers.length + ' oferta' + (offers.length > 1 ? 's' : '') +
-            (debutMarket ? ' · firma o espera' : ' · decide tu próximo movimiento'))
-          : 'Sin ofertas activas · puedes esperar')
+          ? (DCS.i18n.tn('common.offers', offers.length, { count: offers.length }) +
+            (debutMarket ? ' · ' + t('market.signOrWait') : ' · ' + t('market.nextMove')))
+          : t('market.noActive') + ' · ' + t('market.canWait'))
         : (offers.length
-          ? offers.length + ' oferta' + (offers.length > 1 ? 's' : '') + ' · decide antes de seguir'
+          ? DCS.i18n.tn('common.offers', offers.length, { count: offers.length }) + ' · ' + t('market.decideBefore')
           : 'Sin ofertas activas')) +
       '</div></div>' +
       '<div class="head-right">' +
@@ -13462,12 +13961,12 @@ a { color: var(--ember); }
 
     if (!offers.length) {
       html += c.card({
-        title: freeAgent ? 'Free Agent' : 'Nada sobre la mesa',
+        title: freeAgent ? t('market.freeAgent') : t('market.nothingOnTable'),
         body: '<p class="muted">' + (freeAgent
           ? 'No tienes ofertas activas. El interés del mercado puede cambiar si esperas: no garantiza nada mejor.'
           : 'No tienes ofertas pendientes ahora mismo. El mercado se abre al cerrar cada temporada.') + '</p>' +
           (freeAgent
-            ? '<div class="mt">' + c.btn('Esperar', 'wait-offers', { variant: 'primary' }) + '</div>'
+            ? '<div class="mt">' + c.btn(t('market.wait'), 'wait-offers', { variant: 'primary' }) + '</div>'
             : '')
       });
       return html;
@@ -13493,8 +13992,8 @@ a { color: var(--ember); }
         '</div>' +
         c.tiles([
           c.tile('Rol', D.ROLES[o.role].short, D.ROLES[o.role].name),
-          c.tile('Duración', o.years + (o.years === 1 ? ' año' : ' años')),
-          c.tile('Salario', fmt.money(monthPay), '/ mes · ' + fmt.money(o.salary) + ' temp.', 'gold'),
+          c.tile(t('market.duration'), (DCS.i18n ? DCS.i18n.tn('common.years', o.years, { count: o.years }) : (o.years + (o.years === 1 ? ' año' : ' años')))),
+          c.tile(t('market.salary'), fmt.money(monthPay), t('market.perMonth') + ' · ' + fmt.money(o.salary), 'gold'),
           c.tile('Premios', Math.round((o.prizeShare || D.DEFAULT_PRIZE_SHARE) * 100) + '%',
             'del premio del equipo'),
           c.tile('Nivel del roster', o.rosterLevel),
@@ -13503,31 +14002,31 @@ a { color: var(--ember); }
         '<div class="mt"><div class="kv"><span>Expectativa</span><span>' + c.esc(o.expectation) + '</span></div>' +
         '<div class="kv"><span>Perspectiva competitiva</span><span>' + c.esc(o.odds) + '</span></div>' +
         (left !== null
-          ? '<div class="kv"><span>Oferta válida</span><span>' + left + (left === 1 ? ' día' : ' días') + '</span></div>'
+          ? '<div class="kv"><span>' + t('market.expires') + '</span><span>' + (DCS.i18n ? DCS.i18n.tn('common.days', left, { count: left }) : (left + (left === 1 ? ' día' : ' días'))) + '</span></div>'
           : '') +
         bonusRows(o.bonuses) + '</div>' +
         (o.note ? '<p class="note">' + c.esc(o.note) + '</p>' : '') +
         '<div class="offer-actions">' +
-        c.btn('Aceptar', 'accept-offer', { value: o.id, variant: top ? 'primary' : undefined }) +
+        c.btn(t('market.accept'), 'accept-offer', { value: o.id, variant: top ? 'primary' : undefined }) +
         (freeAgent || !o.isRenewal
-          ? c.btn('Rechazar', 'reject-offer', { value: o.id, variant: 'ghost' })
+          ? c.btn(t('market.reject'), 'reject-offer', { value: o.id, variant: 'ghost' })
           : '') +
         '</div></div>';
     }).join('');
 
     if (freeAgent) {
       html += c.card({
-        title: 'Esperar',
+        title: t('market.wait'),
         body: '<p class="small muted">Pasan 2–4 semanas. Las ofertas pueden caducar, retirarse, cambiar o aparecer otras. ' +
           'No garantiza algo mejor.</p>' +
-          c.btn('Esperar', 'wait-offers', { variant: 'gold' }) +
-          '<div class="mt">' + c.btn('Rechazar todas', 'decline-offers', { variant: 'danger' }) + '</div>'
+          c.btn(t('market.wait'), 'wait-offers', { variant: 'gold' }) +
+          '<div class="mt">' + c.btn(t('market.reject') + ' ' + t('common.all', null, 'todas'), 'decline-offers', { variant: 'danger' }) + '</div>'
       });
     } else {
       html += c.card({
-        title: 'Rechazar todo',
+        title: t('market.rejectAll', null, 'Rechazar todo'),
         body: '<p class="small muted">Puedes quedarte donde estás o seguir libre esperando algo mejor. ' +
-          'No siempre llega.</p>' + c.btn('Rechazar todas las ofertas', 'decline-offers', { variant: 'danger' })
+          'No siempre llega.</p>' + c.btn(t('market.rejectAll', null, 'Rechazar todas las ofertas'), 'decline-offers', { variant: 'danger' })
       });
     }
     return html;
@@ -13542,7 +14041,7 @@ a { color: var(--ember); }
     var avg = DCS.engine.stats.averages(cr.acc);
     var totalEarn = cr.earnings.salary + cr.earnings.prize + cr.earnings.other;
 
-    var head = '<div class="page-head"><div><h2>Carrera</h2><div class="sub">' +
+    var head = '<div class="page-head"><div><h2>' + t('nav.career') + '</h2><div class="sub">' +
       c.esc(p.nick) + ' · semilla <span class="seed">' + c.esc(state.seed) + '</span></div></div>' +
       '<div class="head-right">' + c.posChip(p.role) + c.badge(p.proYears + ' temporadas pro', 'info') + '</div></div>' +
       c.tabs([
@@ -13565,8 +14064,8 @@ a { color: var(--ember); }
           title: 'Totales de carrera',
           body: c.kpis([
             c.kpi('Mapas', cr.maps),
-            c.kpi('Victorias', cr.wins, null, 'good'),
-            c.kpi('Derrotas', cr.losses, null, 'bad'),
+            c.kpi(t('match.wins'), cr.wins, null, 'good'),
+            c.kpi(t('match.losses'), cr.losses, null, 'bad'),
             c.kpi('Winrate', fmt.pct(cr.maps ? cr.wins / cr.maps : 0), null, null, { v: cr.maps ? cr.wins / cr.maps : 0, fmt: 'pct' }),
             c.kpi('Series', cr.seriesPlayed, cr.seriesWon + '-' + cr.seriesLost),
             c.kpi('Títulos', cr.titles, cr.tournaments + ' torneos', 'gold')
@@ -13653,7 +14152,7 @@ a { color: var(--ember); }
       (h.titles ? c.badge('★ ' + h.titles, 'gold') : '') +
       '<span class="tl-right">' + c.ratingChip(h.rating) + '</span>' +
       '</div>' +
-      '<div class="tl-best">' + c.esc(h.bestResult) + '</div></div>';
+      '<div class="tl-best">' + c.esc(tResult(h.bestResult)) + '</div></div>';
     return head + (open ? yearDetail(state, h) : '');
   }
 
@@ -13662,8 +14161,8 @@ a { color: var(--ember); }
     var open = DCS.ui.app.openTourn;
     var body = c.tiles([
       c.tile('Mapas', h.acc.maps),
-      c.tile('Victorias', h.acc.wins, null, 'good'),
-      c.tile('Derrotas', h.acc.losses, null, 'bad'),
+      c.tile(t('match.wins'), h.acc.wins, null, 'good'),
+      c.tile(t('match.losses'), h.acc.losses, null, 'bad'),
       c.tile('Winrate', fmt.pct(avg.winrate)),
       c.tile('Series', h.seriesPlayed, h.seriesWon + '-' + h.seriesLost),
       c.tile('Rating', h.rating === null ? '—' : h.rating),
@@ -13713,7 +14212,7 @@ a { color: var(--ember); }
     var p = state.player;
     var cr = state.career;
     if (!l) {
-      return '<div class="page-head"><div><h2>Legado</h2></div></div>' +
+      return '<div class="page-head"><div><h2>' + t('nav.legacy') + '</h2></div></div>' +
         c.card({ title: 'Carrera en curso', body: '<p class="muted">Tu legado se escribirá cuando cuelgues el ratón.</p>' });
     }
     var avg = DCS.engine.stats.averages(cr.acc);
@@ -13825,26 +14324,40 @@ a { color: var(--ember); }
 
   var c = DCS.ui.c, fmt = DCS.ui.fmt, D = DCS.data;
   var S = DCS.ui.screens;
+  var t = function (key, vars, fallback) {
+    return DCS.t ? DCS.t(key, vars, fallback) : (fallback || '');
+  };
+  var tResult = function (label) {
+    if (!label) return '';
+    if (String(label).indexOf('PLACE:') === 0) {
+      return t('result.PLACE_N', { n: String(label).slice(6) }, String(label).slice(6) + 'º puesto');
+    }
+    return (DCS.i18n && DCS.i18n.result(label)) || label;
+  };
+  var tStage = function (stage) {
+    if (!stage) return '';
+    if (DCS.engine && DCS.engine.tournaments && DCS.engine.tournaments.displayStage) {
+      return DCS.engine.tournaments.displayStage(stage);
+    }
+    return (DCS.i18n && DCS.i18n.stage(stage)) || stage;
+  };
+  var tMatch = function (rt) {
+    if (!rt) return '';
+    return (DCS.i18n && DCS.i18n.matchType(rt)) || rt.label || '';
+  };
 
-  var NAV = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'profile', label: 'Perfil' },
-    { id: 'team', label: 'Equipo' },
-    { id: 'season', label: 'Temporada' },
-    { id: 'tournaments', label: 'Torneos' },
-    { id: 'finances', label: 'Patrimonio' },
-    { id: 'offers', label: 'Ofertas' },
-    { id: 'career', label: 'Carrera' },
-    { id: 'legacy', label: 'Legado' }
-  ];
-
-  var PHASES = [
-    { id: 'preseason', label: 'Pretemporada' },
-    { id: 'competition', label: 'Competición' },
-    { id: 'review', label: 'Cierre' },
-    { id: 'market', label: 'Mercado' },
-    { id: 'yearEnd', label: 'Fin de año' }
-  ];
+  var NAV_IDS = ['dashboard', 'profile', 'team', 'season', 'tournaments', 'finances', 'offers', 'career', 'legacy'];
+  var PHASE_IDS = ['preseason', 'competition', 'review', 'market', 'yearEnd'];
+  function navItems() {
+    return NAV_IDS.map(function (id) {
+      return { id: id, label: t('nav.' + id) };
+    });
+  }
+  function phaseItems() {
+    return PHASE_IDS.map(function (id) {
+      return { id: id, label: t('phase.' + id) };
+    });
+  }
 
   var app = {
     view: 'home',
@@ -13911,15 +14424,15 @@ a { color: var(--ember); }
         default: body = S.dashboard(state);
       }
 
-      var nav = NAV.map(function (n) {
+      var nav = navItems().map(function (n) {
         var badge = '';
         if (n.id === 'offers' && state.offers && state.offers.length) {
           badge = ' <span class="badge badge-gold">' + state.offers.length + '</span>';
         }
         if (n.id === 'tournaments' && state.season && state.season.liveTour) {
           badge = state.season.liveTour.done
-            ? ' <span class="badge badge-gold">cierre</span>'
-            : ' <span class="badge badge-gold">en juego</span>';
+            ? ' <span class="badge badge-gold">' + t('nav.closing') + '</span>'
+            : ' <span class="badge badge-gold">' + t('nav.live') + '</span>';
         }
         return '<button data-action="nav" data-value="' + n.id + '" class="' +
           (app.view === n.id ? 'active' : '') + '">' + n.label + badge + '</button>';
@@ -13927,11 +14440,11 @@ a { color: var(--ember); }
 
       var last = state.career.lastRating;
       var hud = '<div class="hud">' +
-        '<div class="hud-item"><span class="hud-k">Edad</span><span class="hud-v">' + p.age + '</span></div>' +
-        '<div class="hud-item"><span class="hud-k">Val</span><span class="hud-v" style="color:var(--gold)">' + p.overall + '</span></div>' +
-        '<div class="hud-item"><span class="hud-k">MMR</span><span class="hud-v">' + fmt.mmr(p.mmr) + '</span></div>' +
-        '<div class="hud-item"><span class="hud-k">Rating</span><span class="hud-v">' + (last === null ? '—' : last) + '</span></div>' +
-        '<div class="hud-item"><span class="hud-k">Rep</span><span class="hud-v">' + Math.round(p.reputation) + '</span></div>' +
+        '<div class="hud-item"><span class="hud-k">' + t('hud.age') + '</span><span class="hud-v">' + p.age + '</span></div>' +
+        '<div class="hud-item"><span class="hud-k">' + t('hud.overall') + '</span><span class="hud-v" style="color:var(--gold)">' + p.overall + '</span></div>' +
+        '<div class="hud-item"><span class="hud-k">' + t('hud.mmr') + '</span><span class="hud-v">' + fmt.mmr(p.mmr) + '</span></div>' +
+        '<div class="hud-item"><span class="hud-k">' + t('hud.rating') + '</span><span class="hud-v">' + (last === null ? t('common.none') : last) + '</span></div>' +
+        '<div class="hud-item"><span class="hud-k">' + t('hud.rep') + '</span><span class="hud-v">' + Math.round(p.reputation) + '</span></div>' +
         '<div class="hud-item"><span class="hud-k">€</span><span class="hud-v">' + fmt.money(DCS.engine.finance.snapshot(state).cash) + '</span></div>' +
         '</div>';
 
@@ -13940,13 +14453,14 @@ a { color: var(--ember); }
         '<div class="brand"><i></i><span>DOTA 2</span><b>CAREER</b></div>' +
         '<div class="identity"><span class="nick">' + c.esc(p.nick) + '</span>' +
         c.posChip(p.role) +
-        '<span class="meta">' + (team ? c.teamMark(team, 'sm') : 'Agente libre') + '</span></div>' +
+        '<span class="meta">' + (team ? c.teamMark(team, 'sm') : t('common.freeAgent')) + '</span></div>' +
         '<div class="topbar-right">' + hud +
+        (DCS.i18n ? DCS.i18n.langSwitch({ className: 'lang-switch topbar-lang' }) : '') +
         c.badge(state.year, 'info') + '</div></header>' +
 
         '<div class="shell"><nav class="nav">' + nav +
         '<div class="nav-sep"></div>' +
-        '<button data-action="go-home">Inicio</button>' +
+        '<button data-action="go-home">' + t('common.home') + '</button>' +
         '</nav><main class="main">' + body + '</main></div>' +
 
         app.advanceBar(state) +
@@ -13957,15 +14471,15 @@ a { color: var(--ember); }
       var current = state.season ? state.season.phase : 'preseason';
       if (current === 'done') current = 'preseason';
       var idx = 0;
-      PHASES.forEach(function (ph, i) { if (ph.id === current) idx = i; });
+      phaseItems().forEach(function (ph, i) { if (ph.id === current) idx = i; });
       var html = '<div class="phase-track">';
-      PHASES.forEach(function (ph, i) {
+      phaseItems().forEach(function (ph, i) {
         var cls = i < idx ? 'done' : (i === idx ? 'now' : '');
         html += '<span class="phase-step ' + cls + '">' +
           (i ? '<span class="phase-line"></span>' : '') +
           '<span class="phase-dot" title="' + c.esc(ph.label) + '"></span></span>';
       });
-      return html + '</div><span class="phase-name">' + c.esc(PHASES[idx].label) + '</span>';
+      return html + '</div><span class="phase-name">' + c.esc(phaseItems()[idx].label) + '</span>';
     },
 
     advanceBar: function (state) {
@@ -13987,22 +14501,22 @@ a { color: var(--ember); }
           return '<div class="advance"><span class="hint">Torneo cerrado</span><span class="spacer"></span>' +
             c.btn('Continuar', 'tour-continue', { variant: 'primary' }) + '</div>';
         }
-        return '<div class="advance"><span class="hint">Serie en curso</span><span class="spacer"></span>' +
-          c.btn('Simular serie', 'tour-series', { variant: 'primary' }) +
-          c.btn('Simular torneo', 'tour-rest', { variant: 'ghost' }) + '</div>';
+        return '<div class="advance"><span class="hint">' + t('tour.seriesInProgress') + '</span><span class="spacer"></span>' +
+          c.btn(t('tour.simulateSeries'), 'tour-series', { variant: 'primary' }) +
+          c.btn(t('tour.simulateTournament'), 'tour-rest', { variant: 'ghost' }) + '</div>';
       }
       if (state.pending) {
-        return '<div class="advance"><span class="hint">Tienes una decisión pendiente</span>' +
-          '<span class="spacer"></span>' + c.btn('Resolver', 'show-pending', { variant: 'primary' }) + '</div>';
+        return '<div class="advance"><span class="hint">' + t('tour.decisionPending') + '</span>' +
+          '<span class="spacer"></span>' + c.btn(t('common.resolve'), 'show-pending', { variant: 'primary' }) + '</div>';
       }
       var offersPending = state.offers && state.offers.length;
       return '<div class="advance">' +
         app.phaseTrack(state) +
         '<span class="spacer"></span>' +
         (offersPending
-          ? '<span class="hint gold">' + state.offers.length + ' oferta(s) sin responder</span>' +
-          c.btn('Ver ofertas', 'nav', { value: 'offers', variant: 'gold' })
-          : c.btn('Saltar al mercado', 'advance-fast', { variant: 'ghost' })) +
+          ? '<span class="hint gold">' + t('tour.offersPending', { count: state.offers.length }) + '</span>' +
+          c.btn(t('tour.viewOffers'), 'nav', { value: 'offers', variant: 'gold' })
+          : c.btn(t('tour.skipToMarket'), 'advance-fast', { variant: 'ghost' })) +
         c.btn(DCS.game.nextLabel(), 'advance', { variant: 'primary', key: 'espacio' }) +
         '</div>';
     },
@@ -14015,36 +14529,37 @@ a { color: var(--ember); }
       if (pend.type === 'event') {
         var ev = DCS.engine.season.findUnresolvedEvent(state);
         if (!ev) { state.pending = null; return; }
+        var evView = (DCS.i18n && DCS.i18n.eventView(ev)) || { title: ev.title, text: ev.text, options: ev.options || [] };
         html = '<div class="modal-bg"><div class="modal">' +
-          '<div class="modal-head"><div class="modal-kicker">Decisión</div><h3>' + c.esc(ev.title) + '</h3></div>' +
-          '<div class="modal-body"><p>' + c.esc(ev.text) + '</p><div class="choices">' +
-          ev.options.map(function (o, i) {
+          '<div class="modal-head"><div class="modal-kicker">' + t('modal.decision') + '</div><h3>' + c.esc(evView.title) + '</h3></div>' +
+          '<div class="modal-body"><p>' + c.esc(evView.text) + '</p><div class="choices">' +
+          evView.options.map(function (o, i) {
             return '<button class="choice" data-action="choose" data-value="' + i + '">' +
               '<b>' + c.esc(o.label) + '</b><span>' + c.esc(o.hint || '') + '</span></button>';
           }).join('') +
-          '</div><p class="small muted mt">Nadie te va a decir qué pasa después.</p></div></div></div>';
+          '</div><p class="small muted mt">' + t('modal.noSpoilers') + '</p></div></div></div>';
       } else if (pend.type === 'retirement') {
         var d = pend.data;
         html = '<div class="modal-bg"><div class="modal">' +
-          '<div class="modal-head"><div class="modal-kicker">Fin de ciclo</div><h3>¿Ha llegado el momento?</h3></div>' +
+          '<div class="modal-head"><div class="modal-kicker">' + t('modal.endCycle') + '</div><h3>' + t('modal.retireQ') + '</h3></div>' +
           '<div class="modal-body"><p>' + c.esc(d.text) + '</p>' +
           '<ul class="lines">' + d.reasons.map(function (r) { return '<li>' + c.esc(r) + '</li>'; }).join('') + '</ul>' +
           '<div class="choices">' +
-          '<button class="choice" data-action="retire-no"><b>Continuar mi carrera</b>' +
-          '<span>Seguir intentándolo: bajar de tier, cambiar de región o de rol, reconstruirte.</span></button>' +
-          '<button class="choice" data-action="retire-yes"><b>Retirarme</b>' +
-          '<span>Cerrar la carrera aquí y descubrir tu legado.</span></button>' +
+          '<button class="choice" data-action="retire-no"><b>' + t('modal.keepPlaying') + '</b>' +
+          '<span>' + t('modal.keepPlayingHint') + '</span></button>' +
+          '<button class="choice" data-action="retire-yes"><b>' + t('modal.retire') + '</b>' +
+          '<span>' + t('modal.retireHint') + '</span></button>' +
           '</div></div></div></div>';
       } else if (pend.type === 'wealth') {
         html = '<div class="modal-bg"><div class="modal">' +
-          '<div class="modal-head"><div class="modal-kicker">Dinero</div><h3>' + c.esc(pend.title) + '</h3></div>' +
+          '<div class="modal-head"><div class="modal-kicker">' + t('modal.money') + '</div><h3>' + c.esc(pend.title) + '</h3></div>' +
           '<div class="modal-body"><p>' + c.esc(pend.text) + '</p>' +
-          '<p class="small muted">Te piden ' + fmt.money(pend.amount) + ' en ' + c.esc(pend.catName) + '. Nadie te dice qué sale.</p>' +
+          '<p class="small muted">' + t('modal.wealthAsk', { amount: fmt.money(pend.amount), cat: pend.catName }) + '</p>' +
           '<div class="choices">' +
-          '<button class="choice" data-action="wealth-yes"><b>Invertir</b>' +
-          '<span>Riesgo alto. Pones el dinero y esperas.</span></button>' +
-          '<button class="choice" data-action="wealth-no"><b>Rechazar</b>' +
-          '<span>Conservas la liquidez.</span></button>' +
+          '<button class="choice" data-action="wealth-yes"><b>' + t('common.invest') + '</b>' +
+          '<span>' + t('modal.investHint') + '</span></button>' +
+          '<button class="choice" data-action="wealth-no"><b>' + t('common.reject') + '</b>' +
+          '<span>' + t('modal.rejectHint') + '</span></button>' +
           '</div></div></div></div>';
       }
       if (html) app.root.insertAdjacentHTML('beforeend', html);
@@ -14159,6 +14674,9 @@ a { color: var(--ember); }
           app.go('home');
           return;
 
+        case 'set-lang':
+          if (DCS.i18n) DCS.i18n.setLang(value || 'es');
+          return;
         case 'open-about':
           app.go('about');
           return;
@@ -14397,7 +14915,7 @@ a { color: var(--ember); }
       }
       /* 1-9 saltan de pantalla */
       if (state && /^[1-9]$/.test(e.key)) {
-        var n = NAV[parseInt(e.key, 10) - 1];
+        var n = navItems()[parseInt(e.key, 10) - 1];
         if (n) { e.preventDefault(); app.go(n.id); }
       }
     },
