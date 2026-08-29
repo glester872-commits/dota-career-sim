@@ -1993,9 +1993,10 @@ a { color: var(--ember); }
   border: 1px solid var(--line-soft); background: rgba(255, 255, 255, .03); color: var(--text-3);
 }
 .qual-step + .qual-step::before { content: "→"; margin-right: 6px; opacity: .55; }
-.qual-step.done { color: #adf5e3; border-color: rgba(31, 217, 176, .35); }
-.qual-step.next { color: var(--gold); border-color: rgba(255, 194, 71, .45); }
-.qual-step.out, .qual-step.cancelled { color: #ffc4cf; border-color: rgba(255, 90, 117, .3); }
+.qual-step.completed, .qual-step.qualified, .qual-step.done { color: #adf5e3; border-color: rgba(31, 217, 176, .35); }
+.qual-step.in_progress, .qual-step.next { color: var(--gold); border-color: rgba(255, 194, 71, .45); }
+.qual-step.eliminated, .qual-step.locked, .qual-step.out, .qual-step.cancelled { color: #ffc4cf; border-color: rgba(255, 90, 117, .3); }
+.qual-step.available, .qual-step.pending { color: var(--text-3); }
 
 /* Desglose económico dentro de un resultado abierto */
 .result-detail { padding: 4px 14px 12px; background: rgba(255, 255, 255, .02); }
@@ -3618,6 +3619,7 @@ a { color: var(--ember); }
       regionKey: null,
       prestige: 2, tier: 3, field: 16, groupSeries: 2, format: 'bo1',
       playoff: 3, playoffFormat: 'bo3', prize: 0, regional: true, chance: 0.75,
+      qualSlots: 2,
       logo: null
     },
 
@@ -3626,6 +3628,7 @@ a { color: var(--ember); }
       id: 't2_qual', kind: 'qualifier', level: 'closed', label: 'Closed Qualifier',
       prestige: 4, tier: 2, field: 12, groupSeries: 2, format: 'bo3',
       playoff: 3, playoffFormat: 'bo3', prize: 0, regional: true, chance: 0.85,
+      qualSlots: 1,
       logo: null
     },
     ti_qual: {
@@ -3634,6 +3637,7 @@ a { color: var(--ember); }
       prestige: 7, tier: 2, field: 12, groupSeries: 3, format: 'bo3',
       playoff: 3, playoffFormat: 'bo3', prize: 0, regional: true,
       strongField: true, cutBonus: 0.10, repMult: 1.6,
+      qualSlots: 1,
       logo: null
     },
 
@@ -3643,7 +3647,7 @@ a { color: var(--ember); }
       id: 't3_league', kind: 'league', level: 'regional', label: 'Liga regional División 2',
       regionKey: 'div2',
       prestige: 2, tier: 3, field: 8, groupSeries: 7, format: 'bo3',
-      playoff: 2, playoffFormat: 'bo3', prizeRange: [20000, 40000], split: 'flat',
+      playoff: 2, playoffFormat: 'bo3', prizeRange: [20000, 50000], split: 'flat',
       regional: true, always: true,
       logo: null
     },
@@ -3651,7 +3655,7 @@ a { color: var(--ember); }
       id: 't3_online', kind: 'tournament', level: 'regional', label: 'Copa regional',
       regionKey: 'openCup',
       prestige: 3, tier: 3, field: 8, groupSeries: 3, format: 'bo1',
-      playoff: 3, playoffFormat: 'bo3', prizeRange: [25000, 50000], split: 'flat',
+      playoff: 3, playoffFormat: 'bo3', prizeRange: [20000, 50000], split: 'flat',
       regional: true, chance: 0.5,
       logo: null
     },
@@ -3659,7 +3663,7 @@ a { color: var(--ember); }
       id: 't2_league', kind: 'league', level: 'regional', label: 'Liga regional División 1',
       regionKey: 'div1',
       prestige: 4, tier: 2, field: 8, groupSeries: 7, format: 'bo3',
-      playoff: 2, playoffFormat: 'bo3', prizeRange: [50000, 100000], split: 'flat',
+      playoff: 2, playoffFormat: 'bo3', prizeRange: [50000, 150000], split: 'flat',
       regional: true, always: true,
       logo: null
     },
@@ -3667,7 +3671,7 @@ a { color: var(--ember); }
       id: 't2_regional', kind: 'tournament', level: 'regional', label: 'Campeonato regional',
       regionKey: 'cup',
       prestige: 5, tier: 2, field: 12, groupSeries: 4, format: 'bo2',
-      playoff: 3, playoffFormat: 'bo3', prizeRange: [80000, 150000], split: 'flat',
+      playoff: 3, playoffFormat: 'bo3', prizeRange: [50000, 150000], split: 'flat',
       regional: true, chance: 0.7,
       logo: null
     },
@@ -3712,6 +3716,7 @@ a { color: var(--ember); }
       prestige: 8, tier: 1, field: 16, groupSeries: 5, format: 'bo2',
       playoff: 4, playoffFormat: 'bo3', prize: 1000000, split: 'slam',
       regional: false, gated: true,
+      entryRequirements: { minTier: 2 },
       logo: null
     },
     blast_slam: {
@@ -3720,6 +3725,7 @@ a { color: var(--ember); }
       prestige: 9, tier: 1, field: 12, groupSeries: 4, format: 'bo2',
       playoff: 3, playoffFormat: 'bo3', prize: 1000000, split: 'slam',
       regional: false, gated: true, invite: true,
+      entryRequirements: { minTier: 2 },
       logo: null
     },
     dreamleague: {
@@ -3727,6 +3733,7 @@ a { color: var(--ember); }
       label: 'DreamLeague',
       prestige: 8, tier: 1, field: 16, groupSeries: 5, format: 'bo2',
       playoff: 4, playoffFormat: 'bo3', prize: 1000000, regional: false, gated: true,
+      entryRequirements: { minTier: 2 },
       logo: null
     },
     epl_masters: {
@@ -3735,6 +3742,7 @@ a { color: var(--ember); }
       prestige: 7, tier: 2, field: 12, groupSeries: 4, format: 'bo2',
       playoff: 3, playoffFormat: 'bo3', prizeRange: [100000, 250000], split: 'flat',
       regional: false, gated: true,
+      entryRequirements: { minTier: 3 },
       logo: null
     },
 
@@ -3745,6 +3753,7 @@ a { color: var(--ember); }
       prestige: 10, tier: 1, field: 16, groupSeries: 6, format: 'bo2',
       playoff: 5, playoffFormat: 'bo3', prizeRange: [3000000, 8000000], split: 'ti',
       regional: false, gated: true,
+      entryRequirements: { minTier: 2, maxRankQual: 24 },
       logo: null
     }
   };
@@ -3812,6 +3821,7 @@ a { color: var(--ember); }
    */
   function qualifyingSlots(template) {
     if (!template || template.kind !== 'qualifier') return 0;
+    if (typeof template.qualSlots === 'number') return template.qualSlots;
     return template.level === 'closed' ? 1 : 2;
   }
 
@@ -6100,6 +6110,26 @@ a { color: var(--ember); }
     var rank = DCS.engine.world.rankOf(state, team.id) || 999;
     var rep = team.reputation;
     var q = team.quality;
+    var req = template.entryRequirements || null;
+
+    if (lv.id === 'ti') {
+      /* Tier 3 no pisa The International en un año. Tier 2 solo por clasificatoria.
+         Tier 1: invitación por ranking o Regional Qualifier. */
+      if (team.tier >= 3) return null;
+      if (team.tier === 1) {
+        var inviteOdds = rank <= 4 ? 0.82 : (rank <= 8 ? 0.55 : (rank <= 12 ? 0.28 : 0.08));
+        if (rep >= 70) inviteOdds += 0.10;
+        if (rng.chance(U.clamp(inviteOdds, 0.05, 0.92))) {
+          return { access: 'invite', route: [] };
+        }
+        if (rank <= 24 || rep >= 40 || (req && rank <= (req.maxRank || 24))) {
+          return { access: 'closed', route: ['ti_qual'] };
+        }
+        return null;
+      }
+      if (q >= 70 && (rank <= 30 || rep >= 50)) return { access: 'closed', route: ['ti_qual'] };
+      return null;
+    }
 
     if (lv.id === 't1') {
       if (team.tier === 1) {
@@ -6154,6 +6184,12 @@ a { color: var(--ember); }
       });
     }
 
+    function qualifierTplId(kind) {
+      if (kind === 'open') return 't3_open';
+      if (kind === 'ti_qual') return 'ti_qual';
+      return 't2_qual';
+    }
+
     /* Evento con puerta: primero las clasificatorias que le toquen. */
     function pushGated(tplId) {
       var tpl = T[tplId];
@@ -6162,7 +6198,13 @@ a { color: var(--ember); }
       if (!r) return;
       var name = displayName(tpl);
       r.route.forEach(function (kind) {
-        push(kind === 'open' ? 't3_open' : 't2_qual', tplId, kind, qualifierName(name, kind, region));
+        var qId = qualifierTplId(kind);
+        var qTpl = T[qId];
+        var qRole = kind === 'ti_qual' ? 'closed' : kind;
+        var qName = kind === 'ti_qual'
+          ? calendarLabel(qTpl, year, region)
+          : qualifierName(name, kind === 'ti_qual' ? 'closed' : kind, region);
+        push(qId, tplId, qRole, qName);
       });
       push(tplId, tplId, 'main', name, r.access);
     }
@@ -6177,12 +6219,14 @@ a { color: var(--ember); }
       pushGated('epl_masters');
       if (rng.chance(0.55)) pushGated('t2_intl');
       if (rng.chance(0.5)) pushGated(rng.pick(['dreamleague', 'pgl_wallachia', 'blast_slam']));
+      pushGated('ti');
     } else {
       push('t1_league');
       pushGated('dreamleague');
       pushGated('pgl_wallachia');
       pushGated('blast_slam');
       pushGated('epl_masters');
+      pushGated('ti');
     }
     return plan;
   }
@@ -8017,6 +8061,15 @@ a { color: var(--ember); }
     return x;
   }
 
+  function planHasTpl(comp, tplId) {
+    var list = comp.plan || [];
+    for (var i = 0; i < list.length; i++) {
+      var e = planEntry(list[i]);
+      if (e && (e.tpl === tplId || e.gid === tplId)) return true;
+    }
+    return false;
+  }
+
   function planHasLevel(comp, level) {
     var list = comp.plan || [];
     for (var i = 0; i < list.length; i++) {
@@ -8092,9 +8145,32 @@ a { color: var(--ember); }
           c.lines.push(entry.role === 'open'
             ? 'Superas la clasificatoria abierta: entras en el closed qualifier de ' + targetName + '.'
             : 'Superas el closed qualifier: plaza en ' + targetName + '.');
+          if (entry.tpl === 'ti_qual' || entry.gid === 'ti') {
+            c.ti.qualStarted = true;
+            c.ti.direct = true;
+            c.ti.via = 'Clasificatorio regional';
+            awardBonus(state, 'tiQual', 'Bonus por clasificar a The International');
+          }
         } else {
           c.blocked[entry.gid] = true;
           c.lines.push('Te quedas fuera de ' + targetName + ' en la clasificatoria.');
+          if (entry.tpl === 'ti_qual' || entry.gid === 'ti') c.ti.qualStarted = true;
+        }
+      }
+      if (entry && entry.tpl === 'ti' && entry.role === 'main' && rec) {
+        rec.via = entry.access === 'invite' ? 'Invitación directa' : (c.ti.via || 'Clasificatorio regional');
+        c.tiRecord = rec;
+        c.ti.tiStarted = true;
+        c.ti.direct = true;
+        if (!c.ti.via) c.ti.via = rec.via;
+        state.career.tiPlayed++;
+        if (entry.access === 'invite') {
+          awardBonus(state, 'tiQual', 'Bonus por clasificar a The International');
+        }
+        if (rec.placement === 1) {
+          state.career.tiWon++;
+          state.player.reputation = U.clamp(state.player.reputation + 22, 0, 100);
+          state.player.morale = U.clamp(state.player.morale + 20, 0, 100);
         }
       }
       maybeMid(state, rng, team, live.meta.index);
@@ -8214,20 +8290,26 @@ a { color: var(--ember); }
     }
 
     if (c.segment === 'ti') {
-      var gate = rollTiGate(state, rng, team, c);
-      if (gate === 'qual') {
-        c.ti.qualStarted = true;
-        return startLive(state, rng, team, D.TOURNAMENT_TEMPLATES.ti_qual, { kind: 'tiQual' });
-      }
-      if (gate === 'ti') {
-        c.ti.tiStarted = true;
-        if (c.ti.via === 'Invitación directa') {
-          awardBonus(state, 'tiQual', 'Bonus por clasificar a The International');
+      /* El TI ya va en el calendario del año: el segmento legacy solo
+         cubre partidas guardadas antes de meterlo en el plan. */
+      if (planHasTpl(c, 'ti') || planHasTpl(c, 'ti_qual')) {
+        c.segment = 'end';
+      } else {
+        var gate = rollTiGate(state, rng, team, c);
+        if (gate === 'qual') {
+          c.ti.qualStarted = true;
+          return startLive(state, rng, team, D.TOURNAMENT_TEMPLATES.ti_qual, { kind: 'tiQual' });
         }
-        return startLive(state, rng, team, D.TOURNAMENT_TEMPLATES.ti,
-          { kind: 'ti', via: c.ti.via }, { access: c.ti.via === 'Invitación directa' ? 'invite' : 'qualifier' });
+        if (gate === 'ti') {
+          c.ti.tiStarted = true;
+          if (c.ti.via === 'Invitación directa') {
+            awardBonus(state, 'tiQual', 'Bonus por clasificar a The International');
+          }
+          return startLive(state, rng, team, D.TOURNAMENT_TEMPLATES.ti,
+            { kind: 'ti', via: c.ti.via }, { access: c.ti.via === 'Invitación directa' ? 'invite' : 'qualifier' });
+        }
+        c.segment = 'end';
       }
-      c.segment = 'end';
     }
 
     var done = competitionReport(state);
@@ -8310,39 +8392,6 @@ a { color: var(--ember); }
       outcome: 'Quedas sin equipo.'
     });
     return null;
-  }
-
-  /* Camino a The International: invitación directa o clasificatorio.
-     Deliberadamente difícil: es el techo del juego.               */
-  function tiPath(state, rng, team, report) {
-    var qualified = false, via = null;
-
-    if (team.tier === 1) {
-      var pts = team.points;
-      var chance = pts >= 185 ? 0.70 : (pts >= 135 ? 0.32 : (pts >= 95 ? 0.11 : 0.015));
-      if (rng.chance(chance)) { qualified = true; via = 'Invitación directa'; }
-    }
-    /* al clasificatorio solo llegan los que han hecho algo durante el año */
-    var eligible = (team.tier === 1 && team.points >= 40) || (team.tier === 2 && team.quality > 70 && team.points >= 55);
-    if (!qualified && eligible) {
-      var q = DCS.engine.tournaments.runTournament(state, rng, team, D.TOURNAMENT_TEMPLATES.ti_qual, state.year);
-      absorb(state, q.acc, q.record);
-      report.tournaments.push(q.record);
-      if (q.record.qualified) { qualified = true; via = 'Clasificatorio regional'; }
-    }
-    if (!qualified) return null;
-
-    var ti = DCS.engine.tournaments.runTournament(state, rng, team, D.TOURNAMENT_TEMPLATES.ti, state.year);
-    absorb(state, ti.acc, ti.record);
-    report.tournaments.push(ti.record);
-    ti.record.via = via;
-    state.career.tiPlayed++;
-    if (ti.record.placement === 1) {
-      state.career.tiWon++;
-      state.player.reputation = U.clamp(state.player.reputation + 22, 0, 100);
-      state.player.morale = U.clamp(state.player.morale + 20, 0, 100);
-    }
-    return ti.record;
   }
 
   /* ---------------------------------------------------------
@@ -9461,6 +9510,9 @@ a { color: var(--ember); }
       row('Premio del equipo', fmt.money(rec.teamPrize || 0) +
         (rec.prizeSplit ? ' · ' + Math.round(rec.prizeSplit * 1000) / 10 + '%' : ''));
       row('Tu porcentaje contractual', Math.round(share * 100) + '%');
+      if (typeof rec.playerPool === 'number') {
+        row('Bote de jugadores', fmt.money(rec.playerPool));
+      }
       row('Tu parte', fmt.money(prize), 'gold');
     }
     (rec.bonusLines || []).forEach(function (l) {
@@ -10578,12 +10630,17 @@ a { color: var(--ember); }
       (live.done && live.record && live.record.result === 'Eliminado en fase de grupos'));
 
     var region = live.region ? D.regionName(live.region) : 'Internacional';
+    var accessBadge = '';
+    if (live.access === 'invite') accessBadge = c.badge('Invitado', 'gold');
+    else if (live.access === 'closed' || live.access === 'qualifier') accessBadge = c.badge('Vía clasificatoria', 'info');
+    else if (live.access === 'open') accessBadge = c.badge('Vía Open Qualifier', 'info');
     var head = '<div class="page-head"><div><div class="eyebrow">Serie a serie</div><h2>' + c.esc(live.name) + '</h2>' +
       '<p>' + (eliminatedGroups
         ? 'Eliminado en fase de grupos'
         : (next ? c.esc(next.stage) : (live.record ? c.esc(live.record.result) : 'Torneo cerrado'))) + '</p></div>' +
       '<div class="head-right">' + c.levelBadge(live.level || (tpl && tpl.level)) +
       c.badge(region, 'muted') +
+      accessBadge +
       (live.prizePool ? c.badge(fmt.money(live.prizePool), 'gold') : '') + '</div></div>';
 
     var show = next || (last && last.opp ? {
@@ -10730,19 +10787,35 @@ a { color: var(--ember); }
       '</div>';
   }
 
-  /* Estado de una etapa: jugada, en juego, pendiente o cancelada. */
+  /* Estado de una etapa del camino de clasificación.
+     Vocabulario del brief: LOCKED / AVAILABLE / IN_PROGRESS /
+     QUALIFIED / ELIMINATED / COMPLETED. Las etiquetas al jugador
+     siguen en español. */
   function stageState(state, comp, entry, index) {
     var rec = recordFor(state, entry.name, entry.tpl);
+    var live = state.season && state.season.liveTour;
     if (rec) {
-      /* en el evento principal basta con haberlo disputado; en una
-         clasificatoria, lo que cuenta es haber sacado la plaza */
-      var ok = entry.role === 'main' || !!rec.qualified;
-      return { kind: ok ? 'done' : 'out', label: rec.result, rec: rec };
+      if (entry.role === 'main') {
+        return { kind: 'completed', code: 'COMPLETED', label: rec.result, rec: rec };
+      }
+      if (rec.qualified) {
+        return { kind: 'qualified', code: 'QUALIFIED', label: rec.result || 'Clasificado', rec: rec };
+      }
+      return { kind: 'eliminated', code: 'ELIMINATED', label: rec.result || 'Eliminado', rec: rec };
     }
-    if (comp && comp.blocked && comp.blocked[entry.gid]) return { kind: 'cancelled', label: 'Cancelado' };
-    if (comp && index < comp.i) return { kind: 'skipped', label: 'No disputado' };
-    if (comp && index === comp.i) return { kind: 'next', label: 'Siguiente' };
-    return { kind: 'pending', label: 'Pendiente' };
+    if (comp && comp.blocked && comp.blocked[entry.gid]) {
+      return { kind: 'locked', code: 'LOCKED', label: 'Bloqueado' };
+    }
+    if (live && !live.done && entry.name && live.name === entry.name) {
+      return { kind: 'in_progress', code: 'IN_PROGRESS', label: 'En juego' };
+    }
+    if (comp && typeof comp.i === 'number' && index < comp.i) {
+      return { kind: 'locked', code: 'LOCKED', label: 'No disputado' };
+    }
+    if (comp && typeof comp.i === 'number' && index === comp.i) {
+      return { kind: 'in_progress', code: 'IN_PROGRESS', label: 'Siguiente' };
+    }
+    return { kind: 'available', code: 'AVAILABLE', label: 'Pendiente' };
   }
 
   function qualPath(state, comp, group) {
@@ -10750,7 +10823,8 @@ a { color: var(--ember); }
     return '<div class="qual-path">' + group.stages.map(function (st) {
       var lv = D.TOURNAMENT_LEVELS[st.entry.level];
       var short = st.entry.role === 'main' ? 'Main Event' : (lv ? lv.name : st.entry.role);
-      return '<span class="qual-step ' + st.st.kind + '">' + c.esc(short) + '</span>';
+      var tip = st.st.code ? ' title="' + c.esc(st.st.code) + '"' : '';
+      return '<span class="qual-step ' + st.st.kind + '"' + tip + '>' + c.esc(short) + '</span>';
     }).join('') + '</div>';
   }
 
@@ -10790,7 +10864,7 @@ a { color: var(--ember); }
       var region = main.entry.region ? D.regionName(main.entry.region) : 'Internacional';
       var meta = c.esc(region) + ' · Prize pool ' + (pool ? fmt.money(pool) : '—');
       var st = main.st;
-      var label = st.kind === 'pending' || st.kind === 'next'
+      var label = (st.kind === 'available' || st.kind === 'in_progress')
         ? (g.stages.length > 1 ? accessLabel(main.entry.access || g.stages[0].entry.role) : accessLabel(main.entry.access))
         : st.label;
       /* si el objetivo se cayó en la clasificatoria, el evento no se jugó */
@@ -10800,27 +10874,32 @@ a { color: var(--ember); }
         meta: meta,
         badge: c.levelBadge(main.entry.level),
         state: label,
-        tone: st.rec && st.rec.placement === 1 ? 'is-win' : (st.kind === 'cancelled' ? 'is-out' : '')
+        tone: st.rec && st.rec.placement === 1 ? 'is-win'
+          : (st.kind === 'locked' || st.kind === 'eliminated' ? 'is-out'
+            : (main.entry.level === 'ti' ? 'is-ti' : ''))
       }) + qualPath(state, comp, g);
     }).join('');
 
-    /* The International no está en el calendario: se gana durante el año */
-    var ti = comp && comp.ti;
-    var tiTpl = D.TOURNAMENT_TEMPLATES.ti;
-    var tiState = 'Por decidir';
-    if (comp && comp.tiRecord) tiState = comp.tiRecord.result;
-    else if (ti && ti.tiStarted) tiState = 'En juego';
-    else if (ti && ti.direct) tiState = ti.via || 'Invitación directa';
-    else if (ti && ti.qualStarted) tiState = 'Clasificatorio disputado';
-    else if (ti && ti.eligible) tiState = 'Vía Regional Qualifier';
-    else if (ti && ti.rolled) tiState = 'Fuera de alcance este año';
-    rows += tourRow({
-      name: 'The International ' + state.year,
-      meta: 'Internacional · Prize pool ' + fmt.money(D.prizePoolFor(state, tiTpl, state.year)),
-      badge: c.levelBadge('ti'),
-      state: tiState,
-      tone: 'is-ti'
-    });
+    /* Partidas antiguas: el TI no iba en el plan y se muestra aparte. */
+    var tiInPlan = !!byGid.ti;
+    if (!tiInPlan) {
+      var ti = comp && comp.ti;
+      var tiTpl = D.TOURNAMENT_TEMPLATES.ti;
+      var tiState = 'Por decidir';
+      if (comp && comp.tiRecord) tiState = comp.tiRecord.result;
+      else if (ti && ti.tiStarted) tiState = 'En juego';
+      else if (ti && ti.direct) tiState = ti.via || 'Invitación directa';
+      else if (ti && ti.qualStarted) tiState = 'Clasificatorio disputado';
+      else if (ti && ti.eligible) tiState = 'Vía Regional Qualifier';
+      else if (ti && ti.rolled) tiState = 'Fuera de alcance este año';
+      rows += tourRow({
+        name: 'The International ' + state.year,
+        meta: 'Internacional · Prize pool ' + fmt.money(D.prizePoolFor(state, tiTpl, state.year)),
+        badge: c.levelBadge('ti'),
+        state: tiState,
+        tone: 'is-ti'
+      });
+    }
 
     return c.card({
       title: 'Calendario del año',
