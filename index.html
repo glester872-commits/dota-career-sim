@@ -7934,7 +7934,7 @@ a { color: var(--ember); }
     var groupRatio = template.groupSeries ? live.groupWins / template.groupSeries : 0.5;
     /* Listón de playoffs: más asequible en el circuito regional/T2 para que
        “ganar algo” vuelva a ser habitual; el TI sigue exigente. */
-    var needed = 0.18 + (template.prestige >= 8 ? 0.22 : 0) + (template.prestige >= 10 ? 0.04 : 0) +
+    var needed = 0.16 + (template.prestige >= 8 ? 0.24 : 0) + (template.prestige >= 10 ? 0.04 : 0) +
       (template.cutBonus || 0) + rng.range(-0.05, 0.05);
     live.needed = needed;
     var advanced = cut >= template.field ? true : groupRatio >= needed;
