@@ -57,6 +57,35 @@ ${LANG_CSS_MARK}
   .hero-foot { justify-content: center; }
   .hero-foot .lang-switch { margin-left: 0; width: 100%; justify-content: center; }
 }
+
+/* DCS_MATE_NAT_CSS */
+.mate-line {
+  display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%;
+}
+.mate-line .mate-nick { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.mate-line .mate-country {
+  color: var(--text-3, #8b93a7); font-size: 0.86em; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 11em;
+}
+.mate-nat { display: inline-flex; align-items: center; flex-shrink: 0; line-height: 1; }
+.mate-nat .flag-sm, .mate-nat .flag-neutral {
+  width: 22px; height: 15px; object-fit: contain; border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.12); background: #0b0e14;
+}
+.flag-neutral {
+  display: inline-block; box-sizing: border-box;
+  background: repeating-linear-gradient(-45deg, #2a3140, #2a3140 3px, #1a1f2a 3px, #1a1f2a 6px);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.flag-sm, .flag-lg { object-fit: contain; }
+.mate-roster { display: flex; flex-direction: column; gap: 8px; }
+.mate-roster-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0;
+}
+.mate-roster-role { flex-shrink: 0; }
+@media (max-width: 720px) {
+  .mate-line .mate-country { display: none; }
+}
 `;
 
 if (html.includes(LANG_CSS_MARK)) {
