@@ -8389,18 +8389,40 @@ a { color: var(--ember); }
       scored.push({ team: team, interest: Math.max(0.05, interest) });
     });
     scored.sort(function (a, b) { return b.interest - a.interest; });
+    /* Sin interés real: mercado frío. Un rookie desconocido no siempre
+       tiene el teléfono sonando el día 1. */
     if (!scored.length) {
-      pool.forEach(function (team) {
-        scored.push({ team: team, interest: team.tier === 3 ? 1 : 0.5 });
-      });
+      ensureFaMarket(state);
+      state.offers = [];
+      if (!(p.teamsPlayed && p.teamsPlayed.length)) {
+        pushMarketHighlight(state, 'Entraste al mercado profesional como Free Agent.');
+      }
+      return [];
     }
 
-    var want = 1;
-    if (scored.length >= 2) want = 2;
-    if (scored.length >= 3 && (prof.potential >= 70 || (prof.demand && prof.demand.index >= 1))) want = 3;
-    if (scored.length >= 4 && (prof.potential >= 82 || (prof.demand && prof.demand.index >= 2)) && rng.chance(0.55)) want = 4;
+    /* Calor del mercado: overall, potencial y demanda. Puede ser 0. */
+    var topInterest = scored[0].interest;
+    var heat = U.clamp(
+      0.22 +
+      U.norm(prof.potential, 55, 95) * 0.38 +
+      U.norm(p.overall, 18, 48) * 0.22 +
+      ((prof.demand && prof.demand.index) || 0) * 0.08 +
+      topInterest * 0.18,
+      0.08, 0.92
+    );
+
+    var want = 0;
+    if (rng.chance(heat)) {
+      want = 1;
+      if (scored.length >= 2 && rng.chance(0.42 + heat * 0.35)) want = 2;
+      if (scored.length >= 3 && heat > 0.55 &&
+          (prof.potential >= 74 || (prof.demand && prof.demand.index >= 1)) &&
+          rng.chance(0.40 + heat * 0.25)) want = 3;
+      if (scored.length >= 4 && heat > 0.72 &&
+          (prof.potential >= 84 || (prof.demand && prof.demand.index >= 2)) &&
+          rng.chance(0.35)) want = 4;
+    }
     want = Math.min(want, scored.length);
-    if (!scored.length) want = 0;
 
     var offers = [];
     var bag = scored.slice();
