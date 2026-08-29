@@ -308,11 +308,23 @@
       return resolve(key, null, rt.verdict || '');
     },
 
+    /** Resolve without missing-key warnings (for optional tone fallbacks). */
+    peek: function (key, vars) {
+      var primary = asString(deepGet(catalogs[lang], key), vars || null);
+      if (primary != null) return primary;
+      if (lang !== DEFAULT_LANG) {
+        var fb = asString(deepGet(catalogs[DEFAULT_LANG], key), vars || null);
+        if (fb != null) return fb;
+      }
+      return null;
+    },
+
     /** Re-resolve event copy at display time (language-switch safe). */
     eventView: function (ev) {
-      if (!ev) return { title: '', text: '', options: [] };
+      if (!ev) return { title: '', text: '', options: [], chosen: '', outcome: '' };
       var key = ev.key || ev.pendingKey || '';
       var vars = ev.vars || {};
+      var peek = i18n.peek;
       var title = key
         ? resolve('events.' + key + '.title', vars, ev.title || '')
         : (ev.title || '');
@@ -321,8 +333,13 @@
         text = resolve(ev.textKey, vars, ev.text || '');
       } else if (key) {
         var tone = ev.tone || 'neutral';
-        text = resolve('events.' + key + '.text.' + tone, vars,
-          resolve('events.' + key + '.text', vars, ev.text || ''));
+        var tones = [tone, 'neutral', 'good', 'bad', 'great'];
+        for (var ti = 0; ti < tones.length; ti++) {
+          text = peek('events.' + key + '.text.' + tones[ti], vars);
+          if (text) break;
+        }
+        if (!text) text = peek('events.' + key + '.text', vars);
+        if (!text) text = ev.text || '';
       } else {
         text = ev.text || '';
       }
@@ -334,7 +351,11 @@
           hint: hk ? resolve(hk, vars, o.hint || '') : (o.hint || '')
         };
       });
-      return { title: title, text: text, options: options };
+      var chosen = ev.chosen || '';
+      if (ev.chosenKey) chosen = resolve(ev.chosenKey, vars, chosen);
+      var outcome = ev.outcome || '';
+      if (ev.outcomeKey) outcome = resolve(ev.outcomeKey, vars, outcome);
+      return { title: title, text: text, options: options, chosen: chosen, outcome: outcome };
     },
 
     /** Flag ISO per language code (presentation only). */
