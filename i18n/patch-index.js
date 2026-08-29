@@ -126,6 +126,7 @@ ${LANG_CSS_MARK}
   display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;
 }
 .pref-hero { display: flex; flex-direction: column; gap: 6px; width: 88px; }
+.pref-hero .hero-portrait { width: 72px; height: 40px; object-fit: cover; }
 .pref-hero-name { font-size: 12px; font-weight: 650; line-height: 1.25; }
 @media (max-width: 720px) {
   .pref-hero { width: 72px; }

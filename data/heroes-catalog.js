@@ -13,11 +13,11 @@
     pos5: ['Support', 'Disabler', 'Nuker']
   };
 
-  /* Posiciones habituales (no solo atributo primario). IDs OpenDota. */
+  /* Posiciones habituales en el circuito (no el atributo primario). IDs OpenDota. */
   var POSITION_POOLS = {
-    carry: [1,6,8,10,11,12,18,32,35,41,42,44,46,47,48,54,61,63,67,70,72,73,77,80,81,82,89,93,94,95,106,109,113,114,145],
-    mid: [11,13,17,19,21,22,25,34,35,36,39,43,45,46,47,52,59,61,65,74,75,76,82,97,106,113,114,120,126,129,137,138],
-    offlane: [2,14,16,23,28,29,38,51,55,60,69,71,78,96,97,98,99,100,102,103,104,107,108,129,135,136,137],
+    carry: [1,4,6,8,10,11,12,18,35,41,42,44,46,48,54,56,63,67,70,72,73,77,80,81,89,93,94,95,106,109,113,114,145],
+    mid: [11,13,17,21,22,25,34,35,36,39,43,45,46,47,52,59,61,74,75,76,82,106,113,114,120,126,138],
+    offlane: [2,14,16,23,28,29,33,38,49,51,55,60,69,71,78,96,97,98,99,102,103,104,108,129,135,137],
     pos4: [7,9,14,19,20,40,50,51,62,65,71,83,84,85,86,87,88,100,101,105,107,110,119,123,128,136],
     pos5: [3,5,26,27,30,31,37,50,57,58,64,66,68,79,83,84,86,87,90,91,92,101,102,111,112,121,128,131]
   };
@@ -57,6 +57,11 @@
 
   function preferredHeroes(state) {
     return ensurePreferred(state).map(function (id) { return get(id); }).filter(Boolean);
+  }
+
+  function hasPreferred(state) {
+    var ids = state && state.career && state.career.preferredHeroIds;
+    return Array.isArray(ids) && ids.length === 3;
   }
 
 
@@ -147,6 +152,7 @@
     topThree: topThree,
     ensureStats: ensureStats,
     ensurePreferred: ensurePreferred,
-    preferredHeroes: preferredHeroes
+    preferredHeroes: preferredHeroes,
+    hasPreferred: hasPreferred
   };
 })(window.DCS = window.DCS || {});
