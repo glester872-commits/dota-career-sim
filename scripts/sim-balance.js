@@ -102,7 +102,8 @@ function handleOffers(state, rng) {
   const p = state.player;
   const team = p.teamId ? DCS.engine.world.getTeam(state, p.teamId) : null;
   let accept = false;
-  if (!team) accept = true;
+  if (best.tier === 1 && (!team || team.tier > 1)) accept = true;
+  else if (!team) accept = true;
   else if (best.tier < team.tier) accept = true;
   else if (!p.contract || p.contract.years <= 1) {
     accept = best.tier <= team.tier && best.salary >= (p.contract && p.contract.salary || 0) * 0.95;
@@ -185,9 +186,8 @@ function runOne(i) {
     archetype: ARCH[i % ARCH.length],
     seed: 'balance-' + i + '-' + Date.now().toString(36)
   });
-  /* Mix de trayectorias: ~12% arrancan ya cerca de Tier 1 para medir TI
-     sin sesgar demasiado el circuito regional. */
-  const BOOST_TIER = (i % 5) === 0; /* ~20% */
+  /* Arranque como el jugador (sin inflar T1). BOOST=1 reintroduce un 20% de boost. */
+  const BOOST_TIER = process.env.BOOST === '1' && (i % 5) === 0;
   if (BOOST_TIER) {
     const p = state.player;
     p.overall = Math.max(p.overall, 78);
@@ -214,29 +214,58 @@ function runOne(i) {
     try { DCS.engine.retirement.retire(state, 'sim'); } catch (e) { /* ignore */ }
   }
   const c = state.career || {};
-  const leg = state.legacy || (DCS.engine.retirement && DCS.engine.retirement.computeLegacy
-    ? DCS.engine.retirement.computeLegacy(state, 'sim')
-    : null);
-  const cat = leg && leg.category ? leg.category : (leg && leg.tier ? leg.tier : null);
+  let leg = state.legacy || null;
+  if (!leg && DCS.engine.retirement && DCS.engine.retirement.computeLegacy) {
+    try { leg = DCS.engine.retirement.computeLegacy(state, 'sim'); } catch (e) { leg = null; }
+  }
+  const cat = leg && (leg.category || leg.tier) || null;
+  const bt = (leg && leg.bigTitles && typeof leg.bigTitles === 'object')
+    ? (leg.bigTitles.count || 0)
+    : (leg && leg.bigTitles) || 0;
+  const ty = (state.player && state.player.tierYears) || {};
+  let pTier = 9;
+  if (ty[1]) pTier = 1;
+  else if (ty[2]) pTier = 2;
+  else if (ty[3]) pTier = 3;
   return {
     tiWon: c.tiWon || 0,
     titles: c.titles || 0,
     tiPlayed: c.tiPlayed || 0,
+    bigTitles: bt,
+    score: leg && typeof leg.score === 'number' ? leg.score : null,
     goat: !!(cat && String(cat).indexOf('GOAT') >= 0),
-    category: cat
+    category: cat,
+    years: (state.history && state.history.length) || 0,
+    peakTier: pTier,
+    t1Years: ty[1] || 0
   };
 }
 
 const t0 = Date.now();
-let tiWins = 0, anyTitle = 0, goat = 0, tiAndGoat = 0, goatNoOnlyTi = 0;
+let tiWins = 0, anyTitle = 0, goat = 0, tiAndGoat = 0, goatNoTi = 0, errors = 0, tiPlayedN = 0;
+let reachedT1 = 0, reachedT2 = 0;
+const tiWinners = [];
 for (let i = 0; i < N; i++) {
-  const r = runOne(i);
-  if (r.tiWon > 0) tiWins++;
+  let r;
+  try {
+    r = runOne(i);
+  } catch (e) {
+    errors++;
+    process.stderr.write('ERR ' + i + ': ' + (e && e.message) + '\n');
+    continue;
+  }
+  if (r.peakTier === 1) reachedT1++;
+  if (r.peakTier <= 2) reachedT2++;
+  if (r.tiPlayed > 0) tiPlayedN++;
+  if (r.tiWon > 0) {
+    tiWins++;
+    tiWinners.push(r);
+  }
   if (r.titles > 0) anyTitle++;
   if (r.goat) {
     goat++;
     if (r.tiWon > 0) tiAndGoat++;
-    else goatNoOnlyTi++;
+    else goatNoTi++;
   }
   if ((i + 1) % 50 === 0 || i === N - 1) {
     process.stderr.write('… ' + (i + 1) + '/' + N + '\n');
@@ -244,9 +273,15 @@ for (let i = 0; i < N; i++) {
 }
 const ms = Date.now() - t0;
 const pct = (x) => ((100 * x) / N).toFixed(2) + '%';
+const goatAmongTi = tiWins ? ((100 * tiAndGoat) / tiWins).toFixed(1) + '%' : 'n/a';
 console.log(JSON.stringify({
   n: N,
   ms,
+  errors,
+  reachedT1: pct(reachedT1),
+  reachedT2: pct(reachedT2),
+  tiPlayRate: pct(tiPlayedN),
+  tiPlayed: tiPlayedN,
   tiWinRate: pct(tiWins),
   tiWins,
   anyTitleRate: pct(anyTitle),
@@ -254,5 +289,11 @@ console.log(JSON.stringify({
   goatRate: pct(goat),
   goat,
   goatWithTi: tiAndGoat,
+  goatNoTi,
+  goatShareOfTiWinners: goatAmongTi,
+  tiWinnerSample: tiWinners.slice(0, 16).map((r) => ({
+    tiWon: r.tiWon, tiPlayed: r.tiPlayed, titles: r.titles,
+    bigTitles: r.bigTitles, score: r.score, goat: r.goat, years: r.years, cat: r.category
+  })),
   targets: { ti: '3.4–4.2%', anyTitle: '82–84%' }
 }, null, 2));

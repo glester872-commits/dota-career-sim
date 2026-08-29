@@ -4747,8 +4747,10 @@ a { color: var(--ember); }
       label: 'The International Regional Qualifier',
       prestige: 7, tier: 2, field: 12, groupSeries: 3, format: 'bo3',
       playoff: 3, playoffFormat: 'bo3', prize: 0, regional: true,
-      strongField: true, cutBonus: 0.10, repMult: 1.6,
-      qualSlots: 1,
+      /* Campo regional (no mundial) y 2 plazas: el TI se alcanza por
+         clasificatoria, no por invitación masiva. */
+      cutBonus: 0.04, repMult: 1.6,
+      qualSlots: 2,
       logo: null
     },
 
@@ -6780,7 +6782,7 @@ a { color: var(--ember); }
       /* Ascensos y descensos: el catálogo solo fija el tier de
          partida; a partir de ahí manda el rendimiento del año. */
       var mean = tierQualityMean(team.tier, team.region);
-      if (team.tier > 1 && team.quality > mean + 9 && rng.chance(0.45)) {
+      if (team.tier > 1 && team.quality > mean + 7 && rng.chance(0.52)) {
         team.tier--;
         team.expectation = rng.pick(EXPECTATIONS[team.tier]);
         if (log) log.push(team.name + ' asciende a Tier ' + team.tier + '.');
@@ -7071,14 +7073,14 @@ a { color: var(--ember); }
     /* Curva más plana fuera del máximo nivel → más títulos regionales posibles.
        En The International la curva se endurece un poco. */
     var scale = 16;
-    if (prestige != null && prestige < 7) scale = 22;
-    else if (prestige != null && prestige < 9) scale = 18;
-    if (prestige != null && prestige >= 10) scale = 12.5;
+    if (prestige != null && prestige < 7) scale = 24;
+    else if (prestige != null && prestige < 9) scale = 19;
+    if (prestige != null && prestige >= 10) scale = 17.6;
     var p = U.logistic(us - them, scale);
     var lo = 0.10;
-    if (prestige != null && prestige < 7) lo = 0.15;
-    else if (prestige != null && prestige < 9) lo = 0.12;
-    if (prestige != null && prestige >= 10) lo = 0.06;
+    if (prestige != null && prestige < 7) lo = 0.18;
+    else if (prestige != null && prestige < 9) lo = 0.14;
+    if (prestige != null && prestige >= 10) lo = 0.105;
     return U.clamp(p, lo, 0.90);
   }
 
@@ -7578,9 +7580,14 @@ a { color: var(--ember); }
   function groupElimLimit(template) {
     if (!template || !(template.groupSeries > 0) || template.kind === 'league') return 0;
     var p = template.prestige || 0;
-    /* Solo The International (y equivalentes p>=10) elimina por derrotas en grupos.
-       Aplicarlo a majors/T1 era lo que hundía la tasa de “ganar algo”. */
-    if (p >= 10) return 3;
+    /* Solo The International (p>=10) corta por derrotas en grupos.
+       Con 6 series, 3 derrotas era un 4-2 obligatorio: casi nadie
+       llegaba a playoffs. 4 derrotas deja vivo el 3-3; el listón
+       de playoffs sigue filtrando. */
+    if (p >= 10) {
+      var gs = template.groupSeries || 6;
+      return Math.max(4, Math.ceil(gs * 0.6));
+    }
     return 0;
   }
 
@@ -7927,7 +7934,7 @@ a { color: var(--ember); }
     var groupRatio = template.groupSeries ? live.groupWins / template.groupSeries : 0.5;
     /* Listón de playoffs: más asequible en el circuito regional/T2 para que
        “ganar algo” vuelva a ser habitual; el TI sigue exigente. */
-    var needed = 0.27 + (template.prestige >= 8 ? 0.20 : 0) + (template.prestige >= 10 ? 0.10 : 0) +
+    var needed = 0.18 + (template.prestige >= 8 ? 0.22 : 0) + (template.prestige >= 10 ? 0.04 : 0) +
       (template.cutBonus || 0) + rng.range(-0.05, 0.05);
     live.needed = needed;
     var advanced = cut >= template.field ? true : groupRatio >= needed;
@@ -7990,6 +7997,7 @@ a { color: var(--ember); }
         var pr = template.prestige || 0;
         if (pr < 7) a -= 5;
         else if (pr < 9) a -= 2.5;
+        else if (pr >= 10) a -= 3;
         return a;
       })(),
       teamLevel: DCS.engine.world.teamStrength(state, team, true),
@@ -8109,7 +8117,8 @@ a { color: var(--ember); }
       var rounds = template.playoff;
       var r = live.playoffR;
       if (!live.lower) {
-        var strengthStep = (r - 1) * 2.4;
+        var stepMul = (template.prestige >= 10) ? 0.9 : 2.4;
+        var strengthStep = (r - 1) * stepMul;
         var oppLevel = U.clamp(live.avgOpp + strengthStep + rng.gauss(0, 2.5), 10, 99);
         live.holdOpp = oppLevel;
         var fmt = (r === rounds && template.prestige >= 6) ? 'bo5' : template.playoffFormat;
@@ -8901,7 +8910,7 @@ a { color: var(--ember); }
   /* Valor de mercado que pide cada categoría, del club más flojo al
      más fuerte de su tier. Son listones blandos: hay excepciones,
      pero hay que merecerlas. */
-  var VALUE_BANDS = { 1: [60, 85], 2: [40, 65], 3: [20, 45] };
+  var VALUE_BANDS = { 1: [52, 78], 2: [38, 63], 3: [20, 45] };
 
   function standingOf(state, team, prof) {
     var map = prof && prof.standing ? prof.standing : standingMap(state);
@@ -8924,8 +8933,8 @@ a { color: var(--ember); }
   /* Los grandes no arriesgan: o llegas fuerte, o llegas con un nombre
      enorme y al menos algo de forma. */
   function eliteGate(prof) {
-    if (prof.value >= 75 && prof.form >= 60) return true;
-    return prof.careerRep >= 90 && prof.form >= 50;
+    if (prof.value >= 70 && prof.form >= 55) return true;
+    return prof.careerRep >= 82 && prof.form >= 48;
   }
 
   /**
@@ -9270,7 +9279,7 @@ a { color: var(--ember); }
       interest *= U.lerp(0.7, 1.2, U.norm(prof.potential, 55, 95));
       if (team.tier === 3) interest *= 1.2 + Math.min(0.5, fa.waitCount * 0.08);
       if (team.tier === 2) interest *= Math.max(0.35, 0.9 - fa.waitCount * 0.08);
-      if (team.tier === 1) interest *= 0.15;
+      if (team.tier === 1) interest *= 0.28;
       interest *= rng.range(0.75, 1.25);
       if (interest > 0.05) scored.push({ team: team, interest: interest, why: why });
     });
@@ -9682,8 +9691,9 @@ a { color: var(--ember); }
       if (idleN >= 2 && team.tier === 2) interest *= 1.15;
       if (idleN >= 1 && team.tier === 1) interest *= Math.max(0.15, 0.7 - idleN * 0.2);
       /* Rookie / skill bajo: no hay atajo a Tier 1 élite. */
-      if (team.tier === 1 && (p.proYears || 0) < 2 && prof.value < 70) interest *= 0.05;
-      if (team.tier === 1 && prof.form < 45 && prof.value < 75) interest *= 0.45;
+      if (team.tier === 1 && (p.proYears || 0) < 2 && prof.value < 65) interest *= 0.18;
+      if (team.tier === 1 && (p.proYears || 0) >= 2) interest *= 1.55;
+      if (team.tier === 1 && prof.form < 45 && prof.value < 75) interest *= 0.55;
       /* Rechazar de más enfría el mercado: no mejora por insistir. */
       if (declineStreak >= 1) {
         interest *= Math.max(0.32, 1 - declineStreak * 0.16);
@@ -10840,7 +10850,7 @@ a { color: var(--ember); }
      se puede ser leyenda sin ganar TI, pero no sin ganar nada.     */
   var CATEGORIES = [
     {
-      min: 92, name: 'Candidato a GOAT', gate: function (x) { return x.tiWon >= 1 && (x.tiPlayed >= 2 || x.bigTitles >= 7); },
+      min: 92, name: 'Candidato a GOAT', gate: function (x) { return x.tiWon >= 2; },
       desc: 'Cuando se discuta quién fue el mejor de la historia, tu nombre estará en la conversación.'
     },
     {
@@ -11284,18 +11294,16 @@ a { color: var(--ember); }
     if (c.ti.tiStarted) return null;
     if (!c.ti.rolled) {
       c.ti.rolled = true;
-      var rank = W().rankOf(state, team.id) || 999;
-      if (team.tier === 1) {
-        var pts = team.points;
-        var chance = pts >= 185 ? 0.70 : (pts >= 135 ? 0.32 : (pts >= 95 ? 0.11 : 0.015));
-        /* el ranking global también invita: no solo los puntos del año */
-        if (rank <= 4) chance = Math.max(chance, 0.80);
-        else if (rank <= 8) chance = Math.max(chance, 0.55);
-        else if (rank <= 12) chance = Math.max(chance, 0.30);
-        if (rng.chance(chance)) { c.ti.direct = true; c.ti.via = 'Invitación directa'; }
+      /* Misma puerta que el calendario (accessRoute): invitación rara o clasificatoria. */
+      var tiTpl = D.TOURNAMENT_TEMPLATES.ti;
+      var route = DCS.engine.tournaments.accessRoute
+        ? DCS.engine.tournaments.accessRoute(state, rng, team, tiTpl)
+        : null;
+      if (route && route.access === 'invite') {
+        c.ti.direct = true;
+        c.ti.via = 'Invitación directa';
       }
-      c.ti.eligible = (team.tier === 1 && (team.points >= 40 || rank <= 24)) ||
-        (team.tier === 2 && team.quality > 70 && (team.points >= 55 || rank <= 30));
+      c.ti.eligible = !!route;
     }
     if (c.ti.direct) return 'ti';
     if (!c.ti.qualStarted && c.ti.eligible) return 'qual';
