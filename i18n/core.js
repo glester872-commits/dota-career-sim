@@ -261,6 +261,15 @@
       }
     },
 
+    /** Localized country name from ISO 3166-1 alpha-2. */
+    country: function (code) {
+      if (!code || code === 'XX' || code === 'UNKNOWN') {
+        return resolve('countries.UNKNOWN', null, 'Desconocida');
+      }
+      var k = String(code).toUpperCase();
+      return resolve('countries.' + k, null, k);
+    },
+
     stageKey: stageKey,
     resultKey: resultKey,
 
