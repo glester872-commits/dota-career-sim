@@ -11202,9 +11202,6 @@ a { color: var(--ember); }
     var rng = DCS.runtime.get();
     var s = state.season;
     var p = state.player;
-    if (DCS.engine.preseasonSpecial && DCS.engine.preseasonSpecial.expireIfNeeded) {
-      DCS.engine.preseasonSpecial.expireIfNeeded(state);
-    }
     if (!s.comp) initComp(state);
     var c = s.comp;
     var team = W().getTeam(state, p.teamId);
@@ -11224,6 +11221,12 @@ a { color: var(--ember); }
       state.pending = { type: 'event', eventId: pendingEvent.id };
       if (DCS.engine.inbox && DCS.engine.inbox.pushEvent) DCS.engine.inbox.pushEvent(state, pendingEvent);
       return { type: 'event', blocked: true };
+    }
+
+    /* Pretemporada terminada de verdad: ya no hay decisiones pendientes y
+       el circuito arranca (o el FA cierra la fase). Caduca la apuesta ignorada. */
+    if (DCS.engine.preseasonSpecial && DCS.engine.preseasonSpecial.expireIfNeeded) {
+      DCS.engine.preseasonSpecial.expireIfNeeded(state);
     }
 
     if (c.segment === 'end' || !team) {
@@ -11756,11 +11759,14 @@ a { color: var(--ember); }
     if (!state || !state.career) return null;
     var cur = state.career.preseasonSpecial;
     if (cur && cur.year === state.year) {
-      if (DCS.engine.inbox && DCS.engine.inbox.pushPreseasonSpecial) {
+      /* Misma temporada: no regenerar. Solo asegura el mensaje si sigue pendiente. */
+      if (!cur.resolved && cur.status === 'pending' &&
+          DCS.engine.inbox && DCS.engine.inbox.pushPreseasonSpecial) {
         DCS.engine.inbox.pushPreseasonSpecial(state);
       }
       return cur;
     }
+    /* Nueva temporada: sustituye el bag (sin acumular intentos previos). */
     state.career.preseasonSpecial = fresh(state.year);
     if (DCS.engine.inbox && DCS.engine.inbox.pushPreseasonSpecial) {
       DCS.engine.inbox.pushPreseasonSpecial(state);
@@ -13504,6 +13510,7 @@ a { color: var(--ember); }
     if (!state || !state.career) return null;
     var bag = state.career.preseasonSpecial;
     if (!bag || bag.year !== state.year) return null;
+    if (bag.resolved || bag.status !== 'pending') return null;
     return push(state, {
       dedupeKey: 'preseason-special:' + state.year,
       category: 'system',
