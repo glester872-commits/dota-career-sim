@@ -86,6 +86,46 @@ ${LANG_CSS_MARK}
 @media (max-width: 720px) {
   .mate-line .mate-country { display: none; }
 }
+
+/* DCS_HEROES_INBOX_CSS */
+.hero-top-list { display: flex; flex-direction: column; gap: 10px; }
+.hero-top-row {
+  display: flex; align-items: center; gap: 12px; min-width: 0;
+}
+.hero-portrait {
+  width: 72px; height: 40px; object-fit: cover; border-radius: 3px;
+  flex-shrink: 0; background: #0b0e14;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.1);
+}
+.hero-top-name { font-weight: 650; }
+.hero-top-meta { font-size: 12px; color: var(--text-3, #8b93a7); }
+.mail-list { display: flex; flex-direction: column; gap: 6px; }
+.mail-row {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  text-align: left; background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06); border-radius: 8px;
+  padding: 12px 14px; cursor: pointer; color: inherit; font: inherit;
+}
+.mail-row:hover { background: rgba(255,255,255,.06); }
+.mail-row.unread { border-color: rgba(212,168,75,.35); background: rgba(212,168,75,.06); }
+.mail-dot {
+  width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0;
+  background: transparent;
+}
+.mail-row.unread .mail-dot { background: var(--gold, #d4a84b); }
+.mail-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.mail-from { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.mail-subject { font-weight: 650; }
+.mail-summary { font-size: 13px; color: var(--text-3); }
+.mail-side { flex-shrink: 0; }
+.mail-cat { font-size: 11px; color: var(--text-3); }
+.mail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.mail-result { margin-top: 10px; }
+.nav-inbox-ico { font-size: 14px; opacity: .9; }
+@media (max-width: 720px) {
+  .hero-portrait { width: 56px; height: 32px; }
+  .mail-row { padding: 10px 12px; }
+}
 `;
 
 if (html.includes(LANG_CSS_MARK)) {
