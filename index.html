@@ -12603,7 +12603,8 @@ a { color: var(--ember); }
         c.tierBadge(o.tier) + c.badge(D.REGIONS[o.region].short) +
         (o.isRenewal ? c.badge('Renovación', 'good') : '') +
         (roleChanged ? c.badge('Cambio de rol', 'gold') : '') +
-        (o.proveIt ? c.badge('A prueba', 'info') : '') + '</div>' +
+        (o.proveIt ? c.badge('A prueba', 'info') : '') +
+        (o.tryout ? c.badge('Tryout', 'gold') : '') + '</div>' +
         c.tiles([
           c.tile('Rol', D.ROLES[o.role].short, D.ROLES[o.role].name),
           c.tile('Duración', o.years + (o.years === 1 ? ' año' : ' años')),
