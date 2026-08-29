@@ -21,6 +21,7 @@ I18N_ES = {
         "wins": "Victorias",
         "losses": "Derrotas",
         "winrate": "Winrate",
+        "noMapsYet": "Sin partidas todavía",
         "portraitAlt": "Retrato de {{name}}",
     },
     "inbox": {
@@ -90,6 +91,7 @@ I18N_EN = {
         "wins": "Wins",
         "losses": "Losses",
         "winrate": "Win rate",
+        "noMapsYet": "No matches yet",
         "portraitAlt": "Portrait of {{name}}",
     },
     "inbox": {
