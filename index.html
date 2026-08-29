@@ -1948,23 +1948,53 @@ a { color: var(--ember); }
 /* ============================================================
    CIRCUITO · torneo + nivel competitivo
    ============================================================ */
+.circuit-intro {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.circuit-section { margin: 0 0 14px; }
+.circuit-section:last-child { margin-bottom: 0; }
+.circuit-section-title {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
 .circuit-list { list-style: none; margin: 0; padding: 0; }
 .circuit-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
   padding: 9px 0; min-width: 0;
   border-bottom: 1px solid var(--line-soft);
 }
 .circuit-row:last-child { border-bottom: 0; }
-.circuit-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.circuit-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .circuit-name b { font-size: 14px; font-weight: 650; color: var(--text); letter-spacing: -.01em; overflow-wrap: anywhere; }
-.circuit-note { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
-.circuit-row .badge { flex: none; font-size: 10.5px; letter-spacing: .14em; padding: 5px 10px; }
+.circuit-note { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); overflow-wrap: anywhere; }
+.circuit-row .badge {
+  flex: 0 1 auto;
+  max-width: 46%;
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  padding: 5px 10px;
+  text-align: right;
+  white-space: normal;
+  line-height: 1.25;
+}
 .circuit-row.is-ti {
   padding-left: 10px;
   border-left: 2px solid rgba(255, 194, 71, .5);
   background: linear-gradient(90deg, rgba(255, 194, 71, .07), transparent 65%);
 }
 .circuit-row.is-ti .circuit-name b { color: #ffe6ad; }
+@media (max-width: 640px) {
+  .circuit-row { flex-wrap: wrap; gap: 6px 10px; padding: 10px 0; }
+  .circuit-row .badge { max-width: 100%; text-align: left; }
+  .circuit-name b { font-size: 13.5px; }
+}
 
 /* Calendario del año · nombre, nivel, región, bote y estado */
 .tour-list { display: flex; flex-direction: column; }
@@ -3828,6 +3858,142 @@ a { color: var(--ember); }
     return LEVELS[template.level] || LEVELS.regional;
   }
 
+  /**
+   * Importancia legible del circuito a partir de level/tier de la plantilla
+   * (nunca por nombre comercial).
+   */
+  function circuitImportance(template) {
+    var lv = levelOf(template);
+    var tier = template && typeof template.tier === 'number' ? template.tier : null;
+    if (lv.id === 'ti') {
+      return { section: 'intl', label: 'Tier S · Máximo nivel', tone: 'gold', sort: 70 + (template.prestige || 0) };
+    }
+    if (lv.id === 'open') {
+      return { section: 'qual', label: 'Clasificatoria', tone: 't3', sort: 10 + (template.prestige || 0) };
+    }
+    if (lv.id === 'closed') {
+      return { section: 'qual', label: 'Clasificatoria avanzada', tone: 't3', sort: 20 + (template.prestige || 0) };
+    }
+    if (lv.id === 'regional') {
+      if (tier === 3) {
+        return { section: 'reg', label: 'Regional · Tier 3', tone: 't3', sort: 30 + (template.prestige || 0) };
+      }
+      if (tier === 2) {
+        return { section: 'reg', label: 'Tier 2', tone: 't2', sort: 40 + (template.prestige || 0) };
+      }
+      return { section: 'reg', label: 'Tier 1', tone: 't1', sort: 50 + (template.prestige || 0) };
+    }
+    if (lv.id === 't2') {
+      return { section: 'intl', label: 'Tier 2', tone: 't2', sort: 55 + (template.prestige || 0) };
+    }
+    if (lv.id === 't1') {
+      return { section: 'intl', label: 'Tier 1', tone: 't1', sort: 60 + (template.prestige || 0) };
+    }
+    return { section: 'intl', label: lv.badge || lv.name, tone: lv.tone || 'muted', sort: 45 + (template.prestige || 0) };
+  }
+
+  /**
+   * Catálogo del bloque CIRCUITO: todas las series/competiciones del
+   * motor, sin ediciones por año. Regionals se expanden por región;
+   * internacionales se deduplican por `series` o `id`.
+   */
+  function circuitCatalog() {
+    var regions = DCS.data.REGION_LIST || Object.keys(REGION_EVENTS);
+    var entries = [];
+    var seen = {};
+
+    function pushEntry(opts) {
+      if (seen[opts.id]) {
+        /* Conserva la plantilla de mayor prestigio si choca el mismo id. */
+        var prev = seen[opts.id];
+        if ((opts.prestige || 0) > (prev.prestige || 0)) {
+          var idx = entries.indexOf(prev);
+          if (idx >= 0) entries[idx] = opts;
+          seen[opts.id] = opts;
+        }
+        return;
+      }
+      seen[opts.id] = opts;
+      entries.push(opts);
+    }
+
+    Object.keys(TEMPLATES).forEach(function (tid) {
+      var tpl = TEMPLATES[tid];
+      if (!tpl) return;
+      var lv = levelOf(tpl);
+      var imp = circuitImportance(tpl);
+
+      if (tpl.regional) {
+        regions.forEach(function (reg) {
+          var short = (DCS.data.REGIONS && DCS.data.REGIONS[reg] && DCS.data.REGIONS[reg].short) || reg.toUpperCase();
+          var name;
+          if (tpl.regionKey) {
+            name = regionalName(tpl, reg) || tpl.label;
+          } else if (lv.id === 'open' || lv.id === 'closed') {
+            if (tpl.label && tpl.label !== lv.name) {
+              name = tpl.label + ' · ' + regionName(reg);
+            } else {
+              name = lv.name + ' ' + regionName(reg);
+            }
+          } else {
+            name = tpl.label + (short ? ' · ' + short : '');
+          }
+          /* Regionals con el mismo regionKey (p.ej. div1 en T1 y T2)
+             se deduplican por nombre regional, no por plantilla. */
+          var id = tpl.regionKey
+            ? ('reg:' + tpl.regionKey + '|' + reg)
+            : (tpl.id + '|' + reg);
+          pushEntry({
+            id: id,
+            templateId: tpl.id,
+            series: tpl.series || null,
+            name: name,
+            region: reg,
+            regionShort: short,
+            level: lv.id,
+            tier: tpl.tier,
+            prestige: tpl.prestige || 0,
+            kind: tpl.kind,
+            section: imp.section,
+            importance: imp.label,
+            tone: imp.tone,
+            sort: imp.sort,
+            scope: short + ' · ' + imp.label
+          });
+        });
+        return;
+      }
+
+      var sid = tpl.series || tpl.id;
+      pushEntry({
+        id: sid,
+        templateId: tpl.id,
+        series: tpl.series || tpl.id,
+        name: tpl.label,
+        region: null,
+        regionShort: null,
+        level: lv.id,
+        tier: tpl.tier,
+        prestige: tpl.prestige || 0,
+        kind: tpl.kind,
+        section: imp.section,
+        importance: imp.label,
+        tone: imp.tone,
+        sort: imp.sort,
+        scope: 'Internacional · ' + imp.label
+      });
+    });
+
+    entries.sort(function (a, b) {
+      if (a.sort !== b.sort) return a.sort - b.sort;
+      if (a.prestige !== b.prestige) return a.prestige - b.prestige;
+      if (a.name < b.name) return -1;
+      if (a.name > b.name) return 1;
+      return 0;
+    });
+    return entries;
+  }
+
   /* Nombre de la competición regional según la región del equipo. */
   function regionalName(template, region) {
     if (!template || !template.regionKey) return null;
@@ -3941,6 +4107,8 @@ a { color: var(--ember); }
   DCS.data.EVENT_HEADS = EVENT_HEADS;
   DCS.data.EVENT_TAILS = EVENT_TAILS;
   DCS.data.levelOf = levelOf;
+  DCS.data.circuitImportance = circuitImportance;
+  DCS.data.circuitCatalog = circuitCatalog;
   DCS.data.regionalName = regionalName;
   DCS.data.regionName = regionName;
   DCS.data.prizePoolFor = prizePoolFor;
@@ -11320,20 +11488,47 @@ a { color: var(--ember); }
   }
 
   function competitionCircuitCard(state) {
-    var rows = competitionTally(state).map(function (s) {
-      var rec = s.played
-        ? (s.wins ? s.wins + ' título' + (s.wins === 1 ? '' : 's') + ' · ' + s.played + ' ediciones' : s.played + ' ediciones')
-        : '';
-      return '<li class="' + (s.rank === 'ti' ? 'circuit-row is-ti' : 'circuit-row') + '">' +
-        '<span class="circuit-name"><b>' + c.esc(s.name) + '</b>' +
-        (rec ? '<span class="circuit-note">' + c.esc(rec) + '</span>' : '') +
-        '</span>' +
-        c.levelBadge(s.level) +
-        '</li>';
+    var catalog = (D.circuitCatalog && D.circuitCatalog()) || [];
+    var tally = {};
+    competitionTally(state).forEach(function (s) { tally[s.id] = s; });
+
+    var sections = [
+      { id: 'qual', title: 'Clasificatorias' },
+      { id: 'reg', title: 'Regionales' },
+      { id: 'intl', title: 'Eventos internacionales' }
+    ];
+
+    var intro = '<p class="circuit-intro">El circuito competitivo conecta clasificatorias, torneos regionales y grandes eventos internacionales. Cada competición tiene su propio nivel de prestigio y dificultad.</p>';
+
+    var body = intro + sections.map(function (sec) {
+      var items = catalog.filter(function (e) { return e.section === sec.id; });
+      if (!items.length) return '';
+      var rows = items.map(function (e) {
+        var t = (e.series && tally[e.series]) || tally[e.id];
+        var rec = '';
+        if (t && t.played) {
+          rec = t.wins
+            ? (t.wins + ' título' + (t.wins === 1 ? '' : 's') + ' · ' + t.played + ' ediciones')
+            : (t.played + ' ediciones');
+        }
+        var note = e.scope || '';
+        if (rec) note = note ? (note + ' · ' + rec) : rec;
+        var badgeLabel = e.importance || '';
+        return '<li class="' + (e.level === 'ti' ? 'circuit-row is-ti' : 'circuit-row') + '">' +
+          '<span class="circuit-name"><b>' + c.esc(e.name) + '</b>' +
+          (note ? '<span class="circuit-note">' + c.esc(note) + '</span>' : '') +
+          '</span>' +
+          c.badge(badgeLabel, e.tone || 'muted') +
+          '</li>';
+      }).join('');
+      return '<div class="circuit-section">' +
+        '<div class="circuit-section-title">' + c.esc(sec.title) + '</div>' +
+        '<ul class="circuit-list">' + rows + '</ul></div>';
     }).join('');
+
     return c.card({
       title: 'Circuito',
-      body: '<ul class="circuit-list">' + rows + '</ul>'
+      body: body
     });
   }
 
