@@ -341,7 +341,10 @@
       return { title: title, text: text, options: options };
     },
 
-    /** Compact language switcher markup */
+    /** Flag ISO per language code (presentation only). */
+    FLAG_ISO: { es: 'es', en: 'gb' },
+
+    /** Compact language switcher with flag icons */
     langSwitch: function (opts) {
       opts = opts || {};
       var cls = opts.className || 'lang-switch';
@@ -350,11 +353,14 @@
       for (var i = 0; i < SUPPORTED.length; i++) {
         var code = SUPPORTED[i];
         var active = code === lang ? ' active' : '';
+        var iso = (i18n.FLAG_ISO && i18n.FLAG_ISO[code]) || code;
+        var label = code === 'es' ? 'Español' : (code === 'en' ? 'English' : code.toUpperCase());
         html += '<button type="button" class="lang-btn' + active +
           '" data-action="set-lang" data-value="' + code + '" aria-pressed="' +
-          (code === lang ? 'true' : 'false') + '">' +
-          code.toUpperCase() + '</button>';
-        if (i < SUPPORTED.length - 1) html += '<span class="lang-sep" aria-hidden="true">|</span>';
+          (code === lang ? 'true' : 'false') + '" title="' + label + '" aria-label="' + label + '">' +
+          '<img class="lang-flag" src="https://flagcdn.com/w40/' + iso + '.png" width="28" height="20" alt="' +
+          label + '" loading="lazy" decoding="async">' +
+          '</button>';
       }
       html += '</div>';
       return html;
@@ -3300,31 +3306,49 @@ a { color: var(--ember); }
 
 /* DCS_LANG_SWITCH_CSS */
 .lang-switch {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-family: inherit; font-size: 11px; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--text-3);
+  display: inline-flex; align-items: center; gap: 8px;
+  z-index: 20;
 }
 .lang-switch .lang-btn {
-  background: transparent; border: 0; color: inherit; cursor: pointer;
-  padding: 4px 6px; min-height: 28px; opacity: 0.55; font: inherit;
-  letter-spacing: inherit; text-transform: inherit;
+  background: rgba(8, 12, 16, .45);
+  border: 1px solid rgba(240, 244, 249, .14);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 0;
+  opacity: 0.55;
+  transition: opacity .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .lang-switch .lang-btn:hover,
-.lang-switch .lang-btn:focus-visible { opacity: 1; color: var(--text); outline: none; }
-.lang-switch .lang-btn.active {
-  opacity: 1; color: var(--gold, #d4a84b); font-weight: 700;
+.lang-switch .lang-btn:focus-visible {
+  opacity: 1; outline: none;
+  border-color: rgba(212, 168, 75, .55);
 }
-.lang-switch .lang-sep { opacity: 0.35; user-select: none; }
-.hero-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.hero-foot .lang-switch { margin-left: auto; }
+.lang-switch .lang-btn.active {
+  opacity: 1;
+  border-color: rgba(212, 168, 75, .85);
+  box-shadow: 0 0 0 1px rgba(212, 168, 75, .35);
+}
+.lang-switch .lang-flag {
+  display: block;
+  width: 28px; height: 20px;
+  object-fit: cover;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.lang-switch-home {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+}
+.hero-foot { display: flex; align-items: center; justify-content: flex-start; gap: 12px; flex-wrap: wrap; }
 .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .topbar .lang-switch { flex-shrink: 0; }
 .about-top-actions { display: flex; align-items: center; gap: 10px; }
 @media (max-width: 720px) {
-  .lang-switch { font-size: 10px; }
-  .lang-switch .lang-btn { padding: 6px 8px; min-height: 36px; }
-  .hero-foot { justify-content: center; }
-  .hero-foot .lang-switch { margin-left: 0; width: 100%; justify-content: center; }
+  .lang-switch-home { top: 12px; right: 12px; }
+  .lang-switch .lang-btn { padding: 5px; min-height: 36px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
+  .lang-switch .lang-flag { width: 30px; height: 22px; }
 }
 
 </style>
@@ -12440,6 +12464,7 @@ a { color: var(--ember); }
   S.home = function () {
     var save = DCS.store.peek();
     var html = '<div class="hero-stage">' +
+      (DCS.i18n ? DCS.i18n.langSwitch({ className: 'lang-switch lang-switch-home' }) : '') +
       '<div class="hero-bg" aria-hidden="true">' +
       '<span class="cover-far"></span>' +
       '<span class="cover-mid"></span>' +
@@ -12507,7 +12532,6 @@ a { color: var(--ember); }
     }
     html += '<div class="hero-foot">' +
       '<button type="button" class="about-link" data-action="open-about">' + t('home.about') + '</button>' +
-      (DCS.i18n ? DCS.i18n.langSwitch() : '') +
       '</div>';
     html += '</div></div>';
     return html;

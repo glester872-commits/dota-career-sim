@@ -337,7 +337,10 @@
       return { title: title, text: text, options: options };
     },
 
-    /** Compact language switcher markup */
+    /** Flag ISO per language code (presentation only). */
+    FLAG_ISO: { es: 'es', en: 'gb' },
+
+    /** Compact language switcher with flag icons */
     langSwitch: function (opts) {
       opts = opts || {};
       var cls = opts.className || 'lang-switch';
@@ -346,11 +349,14 @@
       for (var i = 0; i < SUPPORTED.length; i++) {
         var code = SUPPORTED[i];
         var active = code === lang ? ' active' : '';
+        var iso = (i18n.FLAG_ISO && i18n.FLAG_ISO[code]) || code;
+        var label = code === 'es' ? 'Español' : (code === 'en' ? 'English' : code.toUpperCase());
         html += '<button type="button" class="lang-btn' + active +
           '" data-action="set-lang" data-value="' + code + '" aria-pressed="' +
-          (code === lang ? 'true' : 'false') + '">' +
-          code.toUpperCase() + '</button>';
-        if (i < SUPPORTED.length - 1) html += '<span class="lang-sep" aria-hidden="true">|</span>';
+          (code === lang ? 'true' : 'false') + '" title="' + label + '" aria-label="' + label + '">' +
+          '<img class="lang-flag" src="https://flagcdn.com/w40/' + iso + '.png" width="28" height="20" alt="' +
+          label + '" loading="lazy" decoding="async">' +
+          '</button>';
       }
       html += '</div>';
       return html;
