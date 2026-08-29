@@ -2545,19 +2545,66 @@ a { color: var(--ember); }
 .bad { color: var(--red); }
 .gold { color: var(--gold); }
 
-.toast {
-  position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%);
-  background: linear-gradient(180deg, #26333f, #1b2530);
-  border: 1px solid rgba(255, 107, 61, .3);
-  border-left: 3px solid var(--ember);
-  border-radius: 9px;
-  padding: 13px 22px 13px 18px;
-  font-size: 14px; font-weight: 620; color: var(--text); letter-spacing: .005em;
-  z-index: 70;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .25);
-  animation: toastIn .25s cubic-bezier(.2, .9, .3, 1) both; max-width: 90vw;
+/* Mensaje centrado: recuadro + fondo opacado (no interactivo) */
+.center-msg {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: auto;
 }
-@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 10px) } to { opacity: 1; transform: translate(-50%, 0) } }
+.center-msg-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 6, 10, .58);
+  animation: centerMsgBackdrop 1.85s cubic-bezier(.22, .82, .28, 1) both;
+}
+.center-msg-panel {
+  position: relative;
+  z-index: 1;
+  max-width: min(92vw, 28rem);
+  width: max-content;
+  padding: 18px 26px;
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-s), 0 0 0 1px rgba(0, 0, 0, .25);
+  pointer-events: none;
+  animation: centerMsgPanel 1.85s cubic-bezier(.22, .82, .28, 1) both;
+}
+.center-msg-panel > span {
+  display: block;
+  font-family: var(--sans);
+  font-size: clamp(15px, 2.4vw, 20px);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  color: var(--text);
+  text-align: center;
+}
+@keyframes centerMsgBackdrop {
+  0%   { opacity: 0; }
+  14%  { opacity: 1; }
+  72%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes centerMsgPanel {
+  0%   { opacity: 0; transform: translateY(10px) scale(.97); }
+  14%  { opacity: 1; transform: none; }
+  72%  { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-6px) scale(.99); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .center-msg-backdrop,
+  .center-msg-panel {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
 
 /* Aparición escalonada de los bloques */
 .reveal { animation: rise .42s cubic-bezier(.2, .85, .3, 1) both; }
@@ -3024,7 +3071,9 @@ a { color: var(--ember); }
   .modal { width: 100%; max-height: 92dvh; border-radius: 16px 16px 0 0; }
   .choice { min-height: 48px; padding: 14px; }
 
-  .toast { bottom: 16px; max-width: calc(100vw - 24px); }
+  .center-msg { padding: 16px; }
+  .center-msg-panel { padding: 16px 20px; max-width: calc(100vw - 32px); }
+  .center-msg-panel > span { font-size: clamp(15px, 4.2vw, 18px); }
 
   /* Inicio */
   .hero-stage {
@@ -12195,6 +12244,93 @@ a { color: var(--ember); }
 </script>
 <script>
 /* ============================================================
+   UI / CENTER MSG — notificación centrada con recuadro
+   ------------------------------------------------------------
+   Uso: DCS.ui.centerMsg('Decisión aceptada')
+        DCS.centerMsg('Acción completada')
+   Un solo mensaje a la vez. Capa de fondo no interactiva.
+   ============================================================ */
+(function (DCS) {
+  'use strict';
+
+  var LIFE_MS = 1850;
+  var current = null;
+  var timer = null;
+
+  function clearTimer() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  }
+
+  function dismiss() {
+    clearTimer();
+    if (current && current.parentNode) current.parentNode.removeChild(current);
+    current = null;
+  }
+
+  function swallow(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  /**
+   * Muestra un mensaje centrado con fondo opacado.
+   * @param {string} msg
+   * @param {{duration?: number}} [opts] duración total de la animación (ms)
+   */
+  function centerMsg(msg, opts) {
+    if (msg == null || msg === '') return;
+    opts = opts || {};
+    dismiss();
+
+    var el = document.createElement('div');
+    el.className = 'center-msg';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.setAttribute('aria-atomic', 'true');
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'center-msg-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+
+    var panel = document.createElement('div');
+    panel.className = 'center-msg-panel';
+    var span = document.createElement('span');
+    span.textContent = String(msg);
+    panel.appendChild(span);
+
+    el.appendChild(backdrop);
+    el.appendChild(panel);
+
+    /* Bloquea clics al UI de debajo sin cerrar ni disparar acciones. */
+    ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'contextmenu'].forEach(function (ev) {
+      el.addEventListener(ev, swallow, true);
+    });
+
+    document.body.appendChild(el);
+    current = el;
+
+    var life = typeof opts.duration === 'number' ? opts.duration : LIFE_MS;
+    if (life !== LIFE_MS) {
+      backdrop.style.animationDuration = life + 'ms';
+      panel.style.animationDuration = life + 'ms';
+    }
+
+    timer = setTimeout(function () {
+      if (current === el) dismiss();
+    }, life + 40);
+  }
+
+  DCS.ui = DCS.ui || {};
+  DCS.ui.centerMsg = centerMsg;
+  DCS.centerMsg = centerMsg;
+})(window.DCS = window.DCS || {});
+
+</script>
+<script>
+/* ============================================================
    UI / CHARTS — gráficos SVG sin dependencias
    ------------------------------------------------------------
    El gráfico de trayectoria es el mapa de la carrera: se ve de un
@@ -14405,14 +14541,13 @@ a { color: var(--ember); }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
 
-    toast: function (msg) {
-      var old = document.querySelector('.toast');
-      if (old) old.remove();
-      var el = document.createElement('div');
-      el.className = 'toast';
-      el.textContent = msg;
-      document.body.appendChild(el);
-      setTimeout(function () { if (el.parentNode) el.remove(); }, 2800);
+    /** Alias de DCS.ui.centerMsg — feedback breve centrado. */
+    toast: function (msg, opts) {
+      if (DCS.ui && typeof DCS.ui.centerMsg === 'function') {
+        DCS.ui.centerMsg(msg, opts);
+        return;
+      }
+      if (DCS.centerMsg) DCS.centerMsg(msg, opts);
     },
 
     /* ------------------------------------------------------- */
