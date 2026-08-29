@@ -2066,23 +2066,61 @@ a { color: var(--ember); }
 .elim-banner .elim-record{margin:8px 0 0;color:var(--text)}
 .elim-banner .elim-record b{color:var(--bad)}
 
-/* Resultado de serie: jerarquía inequívoca */
+/* Resultado de serie: jerarquía inequívoca + matchup */
 .match-result{
   margin-top:12px;padding:16px 16px 14px;border-radius:14px;
   border:1px solid var(--line);background:rgba(255,255,255,.03);
+  text-align:center;
 }
 .match-result.is-win{border-color:rgba(31,217,176,.4);background:color-mix(in oklab,#1fd9b0 10%,transparent)}
 .match-result.is-loss{border-color:rgba(255,90,117,.4);background:color-mix(in oklab,#ff5a75 10%,transparent)}
 .match-result.is-draw{border-color:var(--line)}
+.match-result .mr-eyebrow{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--text-3);margin:0 0 6px;
+}
 .match-result .mr-verdict{
   font-family:var(--font-display,inherit);font-size:28px;letter-spacing:.08em;
-  line-height:1.1;margin:0 0 6px;
+  line-height:1.1;margin:0 0 14px;
 }
 .match-result.is-win .mr-verdict{color:#adf5e3}
 .match-result.is-loss .mr-verdict{color:#ffc4cf}
-.match-result .mr-score{font:700 34px var(--mono);letter-spacing:-.04em;margin:4px 0 8px;color:var(--gold)}
-.match-result .mr-opp{font-size:15px;font-weight:700;margin:0 0 4px}
-.match-result .mr-meta{font-size:12px;color:var(--text-3);letter-spacing:.04em;text-transform:uppercase;margin:0 0 10px}
+.match-result .mr-matchup{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+  gap:12px;align-items:center;
+  margin:0 0 12px;
+}
+.match-result .mr-team{
+  display:flex;flex-direction:column;align-items:center;gap:8px;min-width:0;
+}
+.match-result .mr-team.is-home{justify-self:end}
+.match-result .mr-team.is-away{justify-self:start}
+.match-result .mr-team .team-mark{
+  flex-direction:column;gap:6px;font-size:13px;font-weight:700;text-align:center;
+}
+.match-result .mr-team .team-mark-name{
+  white-space:normal;overflow-wrap:anywhere;line-height:1.25;max-width:11em;
+}
+.match-result .mr-team .team-logo-wrap,
+.match-result .mr-team .team-mark-md .team-logo-wrap{
+  width:56px;height:56px;border-radius:10px;
+}
+.match-result .mr-score-block{display:flex;flex-direction:column;align-items:center;gap:2px}
+.match-result .mr-score{
+  font:700 34px var(--mono);letter-spacing:-.04em;margin:0;color:var(--gold);line-height:1;
+}
+.match-result .mr-type{
+  display:inline-block;margin:0 0 10px;
+  font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text-2);
+}
+.match-result.is-win .mr-type{color:#adf5e3}
+.match-result.is-loss .mr-type{color:#ffc4cf}
+.match-result .mr-meta{
+  font-size:12px;color:var(--text-3);letter-spacing:.04em;text-transform:uppercase;
+  margin:0 0 10px;overflow-wrap:anywhere;
+}
 .match-result .mr-consequence{
   display:inline-block;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
   padding:6px 10px;border-radius:6px;margin:2px 0 8px;
@@ -2091,14 +2129,26 @@ a { color: var(--ember); }
 .match-result.is-win .mr-consequence{color:#adf5e3;border-color:rgba(31,217,176,.35)}
 .match-result.is-loss .mr-consequence{color:#ffc4cf;border-color:rgba(255,90,117,.35)}
 .match-result .mr-detail{font-size:13px;color:var(--text-2);margin:0 0 6px}
-.match-result .mr-deltas{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.match-result .mr-deltas{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;justify-content:center}
 .match-result .mr-chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line-soft);color:var(--text-2)}
 .match-result .mr-chip.good{color:#adf5e3;border-color:rgba(31,217,176,.3)}
 .match-result .mr-chip.bad{color:#ffc4cf;border-color:rgba(255,90,117,.3)}
 .match-result .mr-next{margin-top:10px;font-size:13px;color:var(--text-2)}
 @media (max-width: 640px) {
-  .match-result .mr-verdict{font-size:26px}
-  .match-result .mr-score{font-size:30px}
+  .match-result .mr-verdict{font-size:24px}
+  .match-result .mr-score{font-size:28px}
+  .match-result .mr-matchup{
+    grid-template-columns:1fr;
+    gap:8px;
+  }
+  .match-result .mr-team.is-home,
+  .match-result .mr-team.is-away{justify-self:center}
+  .match-result .mr-team .team-mark{flex-direction:row;text-align:left;font-size:14px}
+  .match-result .mr-team.is-away .team-mark{flex-direction:row-reverse;text-align:right}
+  .match-result .mr-team .team-mark-name{max-width:none;text-align:inherit}
+  .match-result .mr-team .team-logo-wrap,
+  .match-result .mr-team .team-mark-md .team-logo-wrap{width:44px;height:44px}
+  .match-result .mr-score-block{order:0;margin:2px 0}
   .match-vs{gap:10px}
   .match-score{font-size:26px}
 }
@@ -6317,6 +6367,80 @@ a { color: var(--ember); }
     return { id: t && t.id, name: oppName(live, i) };
   }
 
+  /**
+   * Clasificación del resultado de una serie a partir de live.last
+   * (única fuente de verdad: won / w / l / maps / upset / disappointing / gap).
+   */
+  var UPSET_GAP = 12;
+  function getMatchResultType(last) {
+    if (!last) return null;
+    var won = last.won;
+    var w = last.w | 0;
+    var l = last.l | 0;
+    var total = w + l;
+    var result = won === true ? 'WIN' : (won === false ? 'LOSS' : 'DRAW');
+    var gap = typeof last.gap === 'number' ? last.gap : null;
+    var upset = !!last.upset || (won === true && gap != null && gap >= UPSET_GAP);
+    var disappointing = !!last.disappointing || (won === false && gap != null && gap <= -UPSET_GAP);
+
+    function isComeback() {
+      var maps = last.maps;
+      if (!maps || !maps.length || won !== true) return false;
+      var mine = 0, theirs = 0, behind = false;
+      for (var i = 0; i < maps.length; i++) {
+        if (maps[i] && maps[i].win) mine++; else theirs++;
+        if (theirs > mine) behind = true;
+      }
+      return behind && mine > theirs;
+    }
+
+    var type = 'NORMAL';
+    var label = won === true ? 'VICTORIA' : (won === false ? 'DERROTA' : 'EMPATE');
+
+    if (won === true) {
+      if (upset) {
+        type = 'UPSET';
+        label = 'GRAN VICTORIA · UPSET';
+      } else if (isComeback()) {
+        type = 'COMEBACK';
+        label = 'VICTORIA EN REMONTADA';
+      } else if (total >= 2 && l === 0 && w >= 2) {
+        type = 'DOMINANT';
+        label = 'VICTORIA DOMINANTE';
+      } else if (total >= 2 && l > 0 && w === l + 1) {
+        type = 'CLOSE';
+        label = 'VICTORIA AJUSTADA';
+      } else {
+        type = 'NORMAL';
+        label = 'VICTORIA';
+      }
+    } else if (won === false) {
+      if (disappointing) {
+        type = 'DISAPPOINTING';
+        label = 'DERROTA DECEPCIONANTE';
+      } else if (total >= 2 && w === 0 && l >= 2) {
+        type = 'DOMINANT';
+        label = 'DERROTA CLARA';
+      } else if (total >= 2 && w > 0 && l === w + 1) {
+        type = 'CLOSE';
+        label = 'DERROTA AJUSTADA';
+      } else {
+        type = 'NORMAL';
+        label = 'DERROTA';
+      }
+    }
+
+    return {
+      result: result,
+      type: type,
+      label: label,
+      verdict: won === true ? 'VICTORIA' : (won === false ? 'DERROTA' : 'EMPATE'),
+      upset: upset,
+      disappointing: disappointing,
+      comeback: type === 'COMEBACK'
+    };
+  }
+
   function playSeries(state, rng, live, team, oppLevel, format, stage, opponent, oppIndex) {
     var r = DCS.engine.match.simulateSeries(state, rng, {
       team: team, teamLevel: live.teamLevel, oppLevel: oppLevel, format: format
@@ -6383,6 +6507,7 @@ a { color: var(--ember); }
         return { win: m.win, line: m.line };
       })
     };
+    live.last.resultType = getMatchResultType(live.last);
     return r;
   }
 
@@ -6818,7 +6943,9 @@ a { color: var(--ember); }
     }
 
     if (live.stage === 'group' || (last.stage && isGroupStageLabel(last.stage))) {
-      if (won === false && gr.losses >= elimLosses - 1 && gr.losses < elimLosses) {
+      var isLeague = (tpl && tpl.kind === 'league') || last.stage === 'Liga regular';
+      var stageLabel = isLeague ? 'LIGA REGULAR' : 'FASE DE GRUPOS';
+      if (!isLeague && won === false && gr.losses >= elimLosses - 1 && gr.losses < elimLosses) {
         return {
           code: 'GROUPS_DANGER',
           label: 'SIGUES EN FASE DE GRUPOS',
@@ -6827,8 +6954,8 @@ a { color: var(--ember); }
         };
       }
       return {
-        code: 'GROUPS_CONTINUE',
-        label: 'SIGUES EN FASE DE GRUPOS',
+        code: isLeague ? 'LEAGUE_CONTINUE' : 'GROUPS_CONTINUE',
+        label: 'SIGUES EN ' + stageLabel,
         detail: gr.wins + 'V — ' + gr.losses + 'D',
         tone: won === true ? 'good' : (won === false ? 'bad' : 'neutral')
       };
@@ -7041,6 +7168,7 @@ a { color: var(--ember); }
     usesGroupElim: usesGroupElim,
     sanitizeLive: sanitizeLive,
     seriesConsequence: seriesConsequence,
+    getMatchResultType: getMatchResultType,
     GROUP_ELIM_LOSSES: GROUP_ELIM_LOSSES
   };
 })(window.DCS = window.DCS || {});
@@ -11649,13 +11777,26 @@ a { color: var(--ember); }
       var cons = DCS.engine.tournaments.seriesConsequence
         ? DCS.engine.tournaments.seriesConsequence(live, tpl)
         : null;
+      var rt = last.resultType || (DCS.engine.tournaments.getMatchResultType
+        ? DCS.engine.tournaments.getMatchResultType(last) : null);
       var isWin = last.won === true;
       var isLoss = last.won === false;
-      var verdict = isWin ? 'VICTORIA' : (isLoss ? 'DERROTA' : 'EMPATE');
-      if (last.upset) verdict = 'GRAN VICTORIA';
-      if (last.disappointing) verdict = 'DERROTA DECEPCIONANTE';
+      var verdict = (rt && rt.verdict) || (isWin ? 'VICTORIA' : (isLoss ? 'DERROTA' : 'EMPATE'));
+      var typeLabel = rt && rt.label ? rt.label : '';
+      /* El tipo especial no sustituye VICTORIA/DERROTA; va debajo del marcador. */
+      if (typeLabel === verdict) typeLabel = '';
       var toneCls = isWin ? 'is-win' : (isLoss ? 'is-loss' : 'is-draw');
-      var oppName = last.opp && last.opp.name ? last.opp.name : 'Rival';
+      var oppRef = last.opp || { name: 'Rival' };
+      var oppTeam = null;
+      if (oppRef.id) oppTeam = DCS.engine.world.getTeam(state, oppRef.id);
+      if (!oppTeam && oppRef.name && DCS.data.lookupTeam) oppTeam = DCS.data.lookupTeam(oppRef.name);
+      if (!oppTeam && oppRef.name && DCS.data.TEAM_BY_NAME) oppTeam = DCS.data.TEAM_BY_NAME[oppRef.name];
+      if (!oppTeam) oppTeam = oppRef;
+      var homeTeam = me;
+      if (live.teamId) {
+        var homeFull = DCS.engine.world.getTeam(state, live.teamId);
+        if (homeFull) homeTeam = homeFull;
+      }
       var deltasHtml = '';
       if (last.deltas) {
         var dlt = last.deltas;
@@ -11663,8 +11804,8 @@ a { color: var(--ember); }
         if (dlt.rep) chips.push('<span class="mr-chip ' + (dlt.rep > 0 ? 'good' : 'bad') + '">Reputación ' + (dlt.rep > 0 ? '+' : '') + dlt.rep + '</span>');
         if (dlt.morale) chips.push('<span class="mr-chip ' + (dlt.morale > 0 ? 'good' : 'bad') + '">Moral ' + (dlt.morale > 0 ? '+' : '') + dlt.morale + '</span>');
         if (dlt.form) chips.push('<span class="mr-chip ' + (dlt.form > 0 ? 'good' : 'bad') + '">Forma ' + (dlt.form > 0 ? '+' : '') + dlt.form + '</span>');
-        if (last.upset) chips.push('<span class="mr-chip good">Rival superior</span>');
-        if (last.disappointing) chips.push('<span class="mr-chip bad">Rival inferior</span>');
+        if (rt && rt.upset) chips.push('<span class="mr-chip good">Rival superior</span>');
+        if (rt && rt.disappointing) chips.push('<span class="mr-chip bad">Rival inferior</span>');
         if (chips.length) deltasHtml = '<div class="mr-deltas">' + chips.join('') + '</div>';
       }
       var nextLine = '';
@@ -11673,14 +11814,17 @@ a { color: var(--ember); }
           (next.opp ? ' · vs ' + c.esc(next.opp.name) : '') + '</p>';
       }
       resultBlock = '<div class="match-result ' + toneCls + '">' +
+        '<div class="mr-eyebrow">Resultado</div>' +
         '<div class="mr-verdict">' + verdict + '</div>' +
-        '<div class="mr-score">' + last.w + ' — ' + last.l + '</div>' +
-        '<div class="mr-opp">vs ' + c.esc(oppName) + '</div>' +
-        '<div class="mr-meta">' + c.esc(live.name) + ' · ' + c.esc(last.stage) + '</div>' +
+        '<div class="mr-matchup">' +
+          '<div class="mr-team is-home">' + c.teamMark(homeTeam, 'md') + '</div>' +
+          '<div class="mr-score-block"><div class="mr-score">' + last.w + ' — ' + last.l + '</div></div>' +
+          '<div class="mr-team is-away">' + c.teamMark(oppTeam, 'md') + '</div>' +
+        '</div>' +
+        (typeLabel ? '<div class="mr-type">' + c.esc(typeLabel) + '</div>' : '') +
+        '<div class="mr-meta">' + c.esc(live.name) + (last.stage ? ' · ' + c.esc(last.stage) : '') + '</div>' +
         (cons ? '<div class="mr-consequence">' + c.esc(cons.label) + '</div>' : '') +
         (cons && cons.detail ? '<p class="mr-detail">' + c.esc(cons.detail) + '</p>' : '') +
-        (last.upset ? '<p class="mr-detail">Has derrotado a un rival claramente superior.</p>' : '') +
-        (last.disappointing ? '<p class="mr-detail">Has perdido contra un equipo claramente inferior.</p>' : '') +
         deltasHtml + nextLine + '</div>';
     } else if (eliminatedGroups) {
       resultBlock = '<div class="elim-banner">' +
