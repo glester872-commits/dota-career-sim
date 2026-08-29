@@ -2036,6 +2036,43 @@ a { color: var(--ember); }
 .elim-banner .elim-record{margin:8px 0 0;color:var(--text)}
 .elim-banner .elim-record b{color:var(--bad)}
 
+/* Resultado de serie: jerarquía inequívoca */
+.match-result{
+  margin-top:12px;padding:16px 16px 14px;border-radius:14px;
+  border:1px solid var(--line);background:rgba(255,255,255,.03);
+}
+.match-result.is-win{border-color:rgba(31,217,176,.4);background:color-mix(in oklab,#1fd9b0 10%,transparent)}
+.match-result.is-loss{border-color:rgba(255,90,117,.4);background:color-mix(in oklab,#ff5a75 10%,transparent)}
+.match-result.is-draw{border-color:var(--line)}
+.match-result .mr-verdict{
+  font-family:var(--font-display,inherit);font-size:28px;letter-spacing:.08em;
+  line-height:1.1;margin:0 0 6px;
+}
+.match-result.is-win .mr-verdict{color:#adf5e3}
+.match-result.is-loss .mr-verdict{color:#ffc4cf}
+.match-result .mr-score{font:700 34px var(--mono);letter-spacing:-.04em;margin:4px 0 8px;color:var(--gold)}
+.match-result .mr-opp{font-size:15px;font-weight:700;margin:0 0 4px}
+.match-result .mr-meta{font-size:12px;color:var(--text-3);letter-spacing:.04em;text-transform:uppercase;margin:0 0 10px}
+.match-result .mr-consequence{
+  display:inline-block;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  padding:6px 10px;border-radius:6px;margin:2px 0 8px;
+  border:1px solid var(--line);
+}
+.match-result.is-win .mr-consequence{color:#adf5e3;border-color:rgba(31,217,176,.35)}
+.match-result.is-loss .mr-consequence{color:#ffc4cf;border-color:rgba(255,90,117,.35)}
+.match-result .mr-detail{font-size:13px;color:var(--text-2);margin:0 0 6px}
+.match-result .mr-deltas{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.match-result .mr-chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line-soft);color:var(--text-2)}
+.match-result .mr-chip.good{color:#adf5e3;border-color:rgba(31,217,176,.3)}
+.match-result .mr-chip.bad{color:#ffc4cf;border-color:rgba(255,90,117,.3)}
+.match-result .mr-next{margin-top:10px;font-size:13px;color:var(--text-2)}
+@media (max-width: 640px) {
+  .match-result .mr-verdict{font-size:26px}
+  .match-result .mr-score{font-size:30px}
+  .match-vs{gap:10px}
+  .match-score{font-size:26px}
+}
+
 /* ============================================================
    RESPONSIVE — tablet y móvil (reorganizar, no reducir)
    Desktop (>768) conserva el layout actual.
@@ -4446,7 +4483,7 @@ a { color: var(--ember); }
       }
     },
     {
-      id: 'bench_threat', phase: 'post',
+      id: 'bench_threat', phase: 'post', category: 'ROSTER', rarity: 'major',
       when: function (c) { return has(c) && c.lastRating < 58 && c.player.age >= 18; },
       weight: function () { return 8; },
       build: function (c) {
@@ -4475,6 +4512,440 @@ a { color: var(--ember); }
               }
             }
           ]
+        };
+      }
+    },
+
+    /* ---------------------------------------------------------
+       CONTEXTUALES · rendimiento, mercado, org, meta, viajes
+       --------------------------------------------------------- */
+    {
+      id: 'hot_streak', phase: 'mid', category: 'PERFORMANCE', rarity: 'common',
+      when: function (c) { return c.sig.streakKind === 'W' && c.sig.streak >= 5; },
+      weight: function (c) { return 14 + c.sig.streak; },
+      build: function (c) {
+        c.fx.rep(2);
+        c.fx.morale(4);
+        c.fx.marketBuzz(3);
+        c.fx.form(3);
+        return {
+          title: 'Jugador en racha',
+          tone: 'good',
+          text: 'Encadenas ' + c.sig.streak + ' series ganadas. Las redes hablan de ti y algún scout ha pedido VODs.'
+        };
+      }
+    },
+    {
+      id: 'results_crisis', phase: 'mid', category: 'PERFORMANCE', rarity: 'major',
+      when: function (c) {
+        return c.sig.streakKind === 'L' && c.sig.streak >= 4 && c.sig.titlesThisYear === 0;
+      },
+      weight: function (c) { return 12 + c.sig.streak; },
+      build: function (c) {
+        c.fx.form(-5);
+        c.fx.morale(-6);
+        c.fx.marketBuzz(-4);
+        c.fx.rep(-1);
+        return {
+          title: 'Crisis de resultados',
+          tone: 'bad',
+          text: 'Llevas ' + c.sig.streak + ' derrotas seguidas. El vestuario está tenso y tu nombre deja de sonar en el mercado.'
+        };
+      }
+    },
+    {
+      id: 'good_scrims', phase: 'pre', category: 'SCRIMS', rarity: 'common',
+      when: has,
+      weight: function () { return 7; },
+      build: function (c) {
+        c.fx.form(4);
+        c.fx.morale(3);
+        c.fx.trainingBonus(0.12);
+        return {
+          title: 'Gran semana de scrims',
+          tone: 'good',
+          text: 'Habéis machacado a rivales fuertes en la práctica. El equipo llega al calendario con confianza.'
+        };
+      }
+    },
+    {
+      id: 'bad_scrims', phase: 'pre', category: 'SCRIMS', rarity: 'common',
+      when: has,
+      weight: function (c) { return c.team.synergy < 50 ? 9 : 4; },
+      build: function (c) {
+        c.fx.form(-4);
+        c.fx.morale(-3);
+        return {
+          title: 'Malos scrims',
+          tone: 'bad',
+          text: 'La semana de práctica ha sido un desastre: drafts confusos y tilteo en la voz.'
+        };
+      }
+    },
+    {
+      id: 'exceptional_training', phase: 'pre', category: 'TRAINING', rarity: 'common',
+      when: function () { return true; },
+      weight: function () { return 6; },
+      build: function (c) {
+        c.fx.trainingBonus(0.28);
+        if (c.rng.chance(0.35)) c.fx.attrDrift('mech', 0.8);
+        return {
+          title: 'Entrenamiento excepcional',
+          tone: 'good',
+          text: 'Encuentras un bloque de práctica limpio: repeticiones útiles y foco total.'
+        };
+      }
+    },
+    {
+      id: 'perfect_bootcamp', phase: 'pre', category: 'BOOTCAMP', rarity: 'major',
+      when: has,
+      weight: function () { return 4; },
+      cooldown: 2,
+      build: function (c) {
+        c.fx.synergy(c.rng.int(4, 9));
+        c.fx.trainingBonus(0.2);
+        c.fx.form(3);
+        return {
+          title: 'Bootcamp perfecto',
+          tone: 'good',
+          text: 'Dos semanas juntos fuera de casa. La química del roster da un salto.'
+        };
+      }
+    },
+    {
+      id: 'extra_bootcamp', phase: 'pre', category: 'BOOTCAMP', rarity: 'decision',
+      when: has,
+      weight: function () { return 5; },
+      build: function () {
+        return {
+          title: 'Bootcamp extra',
+          tone: 'neutral',
+          text: 'El staff propone una semana más de preparación antes del siguiente evento.',
+          options: [
+            {
+              label: 'Entrenar',
+              hint: '+preparación y química. Más desgaste.',
+              apply: function (cc) {
+                cc.fx.trainingBonus(0.22);
+                cc.fx.synergy(cc.rng.int(2, 6));
+                cc.fx.form(-cc.rng.int(2, 5));
+                return 'Aceptáis. Llegáis más preparados, pero con las pilas más bajas.';
+              }
+            },
+            {
+              label: 'Descansar',
+              hint: 'Recuperáis cabeza. Sin bonus de preparación.',
+              apply: function (cc) {
+                cc.fx.morale(cc.rng.int(4, 9));
+                cc.fx.form(cc.rng.int(1, 4));
+                return 'Paramos. Nadie gana un scrim extra, pero el vestuario respira.';
+              }
+            }
+          ]
+        };
+      }
+    },
+    {
+      id: 'roster_tension', phase: 'mid', category: 'ROSTER', rarity: 'major',
+      when: function (c) {
+        return has(c) && (c.team.synergy < 48 || (c.sig.streakKind === 'L' && c.sig.streak >= 3));
+      },
+      weight: function (c) { return c.team.synergy < 40 ? 12 : 7; },
+      build: function (c) {
+        c.fx.synergy(-c.rng.int(3, 8));
+        c.fx.flag('rosterRisk', true);
+        return {
+          title: 'Tensión en el roster',
+          tone: 'bad',
+          text: 'Las miradas en la review duran demasiado. Alguien habla de cambios en privado.'
+        };
+      }
+    },
+    {
+      id: 'money_trouble', phase: 'mid', category: 'ORGANIZATION', rarity: 'rare',
+      when: function (c) { return has(c) && c.team.resources < 38; },
+      weight: function () { return 3; },
+      cooldown: 4,
+      build: function (c) {
+        c.fx.resources(-c.rng.int(6, 14));
+        c.fx.morale(-4);
+        c.fx.flag('rosterRisk', true);
+        c.fx.highlight('Problemas financieros en la organización');
+        return {
+          title: 'Problemas financieros',
+          tone: 'bad',
+          text: 'La organización recorta presupuesto. Viajes más baratos, menos staff y rumores de ventas.'
+        };
+      }
+    },
+    {
+      id: 'org_investment', phase: 'pre', category: 'ORGANIZATION', rarity: 'rare',
+      when: has,
+      weight: function () { return 2; },
+      cooldown: 5,
+      build: function (c) {
+        c.fx.resources(c.rng.int(8, 16));
+        c.fx.morale(5);
+        c.fx.synergy(3);
+        c.fx.highlight('Nueva inversión en la organización');
+        return {
+          title: 'Nueva inversión',
+          tone: 'great',
+          text: 'Entra capital fresco. Mejoran las condiciones y el club habla de pelear arriba.'
+        };
+      }
+    },
+    {
+      id: 'star_leaves', phase: 'pre', category: 'ROSTER', rarity: 'rare',
+      when: function (c) { return has(c) && c.team.tier <= 2; },
+      weight: function () { return 2; },
+      cooldown: 4,
+      build: function (c) {
+        var who = c.rng.pick(c.teammateNames || ['la estrella del equipo']);
+        c.fx.rerollTeammate();
+        c.fx.synergy(-c.rng.int(8, 16));
+        c.fx.morale(-5);
+        c.fx.highlight(who + ' abandona el equipo');
+        return {
+          title: 'Una estrella se marcha',
+          tone: 'bad',
+          text: who + ' firma por otro club. El techo del roster baja de golpe.'
+        };
+      }
+    },
+    {
+      id: 'coach_fired', phase: 'mid', category: 'COACH', rarity: 'rare',
+      when: function (c) { return has(c) && (c.sig.earlyExit || c.lastRating < 55); },
+      weight: function () { return 3; },
+      cooldown: 3,
+      build: function (c) {
+        c.fx.synergy(c.rng.chance(0.45) ? c.rng.int(2, 7) : -c.rng.int(2, 6));
+        c.fx.highlight('Cambio de entrenador');
+        return {
+          title: 'Entrenador despedido',
+          tone: 'neutral',
+          text: 'La organización corta por lo sano. Llega un nuevo staff a mitad de temporada.'
+        };
+      }
+    },
+    {
+      id: 'org_exits_dota', phase: 'post', category: 'ORGANIZATION', rarity: 'rare',
+      when: function (c) { return has(c) && c.team.resources < 30 && c.team.tier === 3; },
+      weight: function () { return 1.5; },
+      cooldown: 6,
+      build: function (c) {
+        c.fx.leaveTeam('La organización abandona Dota');
+        c.fx.highlight('La organización abandona Dota');
+        c.fx.morale(-8);
+        return {
+          title: 'La org cierra el proyecto',
+          tone: 'bad',
+          text: 'La organización abandona Dota. Quedas libre de golpe, con el mercado a medias.'
+        };
+      }
+    },
+    {
+      id: 'market_interest', phase: 'mid', category: 'MARKET', rarity: 'common',
+      when: function (c) {
+        return (c.sig.streakKind === 'W' && c.sig.streak >= 3) || c.lastRating >= 72 || c.sig.t1Win;
+      },
+      weight: function () { return 8; },
+      build: function (c) {
+        c.fx.marketBuzz(5);
+        c.fx.rep(1);
+        return {
+          title: 'Interés de otro equipo',
+          tone: 'good',
+          text: 'Un director deportivo pregunta por tu situación. No hay oferta todavía, pero el mercado te mira.'
+        };
+      }
+    },
+    {
+      id: 'high_demand', phase: 'post', category: 'MARKET', rarity: 'common',
+      when: function (c) { return c.player.reputation >= 35 || c.sig.t1Win; },
+      weight: function () { return 5; },
+      build: function (c) {
+        c.fx.marketBuzz(4);
+        return {
+          title: 'Alta demanda de tu posición',
+          tone: 'good',
+          text: 'Hay pocos jugadores de tu rol en forma. Varios clubs buscan exactamente tu perfil.'
+        };
+      }
+    },
+    {
+      id: 'saturated_market', phase: 'post', category: 'MARKET', rarity: 'common',
+      when: function (c) {
+        return c.sig.streakKind === 'L' || c.lastRating < 55 || c.sig.freeAgent;
+      },
+      weight: function () { return 6; },
+      build: function (c) {
+        c.fx.marketBuzz(-5);
+        return {
+          title: 'Mercado saturado',
+          tone: 'bad',
+          text: 'Tu posición está llena de candidatos. Costará destacar aunque rindas bien.'
+        };
+      }
+    },
+    {
+      id: 'free_agent_tryout', phase: 'pre', category: 'CAREER', rarity: 'common',
+      when: function (c) { return c.sig.freeAgent; },
+      weight: function () { return 12; },
+      build: function (c) {
+        c.fx.form(c.rng.int(-2, 5));
+        c.fx.marketBuzz(2);
+        return {
+          title: 'Tryout improvisado',
+          tone: 'neutral',
+          text: 'Te llaman a unas pruebas de un día. No hay contrato sobre la mesa, solo la oportunidad de gustar.'
+        };
+      }
+    },
+    {
+      id: 'ti_spotlight', phase: 'post', category: 'TOURNAMENT', rarity: 'major',
+      when: function (c) { return c.sig.tiQual; },
+      weight: function () { return 10; },
+      cooldown: 1,
+      build: function (c) {
+        c.fx.rep(4);
+        c.fx.marketBuzz(6);
+        c.fx.morale(5);
+        c.fx.highlight('Clasificación a The International');
+        return {
+          title: 'Foco mundial',
+          tone: 'great',
+          text: 'Clasificar a The International te pone en todas las conversaciones. Sponsors y clubs toman nota.'
+        };
+      }
+    },
+    {
+      id: 'tier1_glory', phase: 'post', category: 'TOURNAMENT', rarity: 'major',
+      when: function (c) { return c.sig.t1Win; },
+      weight: function () { return 10; },
+      cooldown: 1,
+      build: function (c) {
+        c.fx.rep(5);
+        c.fx.marketBuzz(5);
+        c.fx.morale(6);
+        c.fx.highlight('Campeón de un Tier 1');
+        return {
+          title: 'Notoriedad de Tier 1',
+          tone: 'great',
+          text: 'Ganar un Tier 1 cambia cómo te miran. Dejas de ser promesa: eres referencia.'
+        };
+      }
+    },
+    {
+      id: 'early_exit_pressure', phase: 'post', category: 'TOURNAMENT', rarity: 'major',
+      when: function (c) { return has(c) && c.sig.earlyExit && c.sig.titlesThisYear === 0; },
+      weight: function () { return 8; },
+      build: function (c) {
+        c.fx.morale(-4);
+        c.fx.synergy(-3);
+        c.fx.flag('rosterRisk', true);
+        return {
+          title: 'Presión tras la eliminación temprana',
+          tone: 'bad',
+          text: 'Caer pronto en un evento grande genera reuniones serias. El roster no está a salvo.'
+        };
+      }
+    },
+    {
+      id: 'upset_buzz', phase: 'mid', category: 'PERFORMANCE', rarity: 'common',
+      when: function (c) { return c.sig.upsetWin; },
+      weight: function () { return 11; },
+      build: function (c) {
+        c.fx.rep(2);
+        c.fx.morale(3);
+        c.fx.marketBuzz(2);
+        c.state.season.flags.upsetWin = false;
+        return {
+          title: 'Eco de la gran victoria',
+          tone: 'good',
+          text: 'Derrotar a un rival claramente superior sigue dando que hablar días después.'
+        };
+      }
+    },
+    {
+      id: 'bad_loss_fallout', phase: 'mid', category: 'PERFORMANCE', rarity: 'common',
+      when: function (c) { return c.sig.badLoss; },
+      weight: function () { return 11; },
+      build: function (c) {
+        c.fx.morale(-3);
+        c.fx.rep(-1);
+        c.state.season.flags.badLoss = false;
+        return {
+          title: 'Críticas por la derrota',
+          tone: 'bad',
+          text: 'Perder contra un rival inferior no se olvida fácil. La afición pide respuestas.'
+        };
+      }
+    },
+    {
+      id: 'new_patch', phase: 'pre', category: 'META', rarity: 'common',
+      when: function () { return true; },
+      weight: function () { return 8; },
+      build: function (c) {
+        var good = c.rng.float() < (0.35 + c.player.attrs.adapt / 200);
+        c.fx.form(good ? c.rng.int(2, 6) : -c.rng.int(2, 6));
+        c.fx.trainingBonus(good ? 0.1 : -0.08);
+        c.fx.attrDrift('adapt', good ? 0.6 : 0.2);
+        return {
+          title: 'Nuevo parche',
+          tone: good ? 'good' : 'bad',
+          text: good
+            ? 'El parche favorece tu estilo. Los primeros drafts salen solos.'
+            : 'El parche te saca de tu zona de confort. Tocará adaptarse a toda prisa.'
+        };
+      }
+    },
+    {
+      id: 'travel_issues', phase: 'mid', category: 'TRAVEL', rarity: 'common',
+      when: function (c) { return has(c) && c.team.tier <= 2; },
+      weight: function () { return 4; },
+      build: function (c) {
+        c.fx.form(-3);
+        c.fx.trainingPenalty(0.1);
+        c.fx.morale(-2);
+        return {
+          title: 'Problemas de viaje',
+          tone: 'bad',
+          text: 'Retrasos, jet lag y un hotel mediocre. Llegáis al evento justos de preparación.'
+        };
+      }
+    },
+    {
+      id: 'sponsor_deal', phase: 'post', category: 'SPONSOR', rarity: 'rare',
+      when: function (c) { return c.player.reputation >= 45 || c.sig.t1Win || c.sig.tiQual; },
+      weight: function () { return 2; },
+      cooldown: 4,
+      build: function (c) {
+        var money = 18000 + Math.round(c.player.reputation * 600);
+        c.fx.money(money);
+        c.fx.rep(2);
+        c.fx.highlight('Sponsor relevante');
+        return {
+          title: 'Sponsor relevante',
+          tone: 'great',
+          text: 'Una marca grande te ficha como rostro. ' + DCS.ui.fmt.money(money) + ' por la temporada.'
+        };
+      }
+    },
+    {
+      id: 'surprise_invite', phase: 'pre', category: 'TOURNAMENT', rarity: 'rare',
+      when: function (c) { return has(c) && c.team.tier === 2 && c.player.reputation >= 40; },
+      weight: function () { return 2; },
+      cooldown: 3,
+      build: function (c) {
+        c.fx.flag('surpriseInvite', true);
+        c.fx.morale(6);
+        c.fx.rep(2);
+        c.fx.highlight('Invitación inesperada a un torneo');
+        return {
+          title: 'Invitación inesperada',
+          tone: 'great',
+          text: 'Un organizador Tier 1 os cuela en la lista de invitados. Nadie se lo esperaba.'
         };
       }
     }
@@ -5684,6 +6155,35 @@ a { color: var(--ember); }
       maps: r.maps.map(function (m) { return m.win ? 'W' : 'L'; }).join('')
     };
     live.log.push(entry);
+
+    /* Upset / derrota decepcionante: solo con gap claro de nivel. */
+    var gap = (oppLevel || 0) - (live.teamLevel || 0);
+    var upset = r.won === true && gap >= 12;
+    var bad = r.won === false && gap <= -12;
+    var delta = null;
+    if (upset || bad) {
+      var p = state.player;
+      var mag = Math.min(4, Math.round(Math.abs(gap) / 8));
+      if (upset) {
+        p.reputation = U.clamp(p.reputation + mag, 0, 100);
+        p.morale = U.clamp(p.morale + mag, 0, 100);
+        p.form = U.clamp(p.form + Math.max(1, mag - 1), 0, 100);
+        if (state.season) {
+          state.season.flags = state.season.flags || {};
+          state.season.flags.upsetWin = true;
+        }
+        delta = { kind: 'upset', rep: mag, morale: mag, form: Math.max(1, mag - 1), gap: gap };
+      } else {
+        p.reputation = U.clamp(p.reputation - Math.max(1, mag - 1), 0, 100);
+        p.morale = U.clamp(p.morale - mag, 0, 100);
+        if (state.season) {
+          state.season.flags = state.season.flags || {};
+          state.season.flags.badLoss = true;
+        }
+        delta = { kind: 'bad', rep: -(Math.max(1, mag - 1)), morale: -mag, gap: gap };
+      }
+    }
+
     live.last = {
       stage: stage,
       opp: ref,
@@ -5692,6 +6192,12 @@ a { color: var(--ember); }
       w: r.mapsWon,
       l: r.mapsLost,
       won: r.won,
+      oppLevel: oppLevel,
+      teamLevel: live.teamLevel,
+      gap: gap,
+      upset: !!upset,
+      disappointing: !!bad,
+      deltas: delta,
       maps: r.maps.map(function (m) {
         return { win: m.win, line: m.line };
       })
@@ -6086,6 +6592,108 @@ a { color: var(--ember); }
     return live;
   }
 
+  /**
+   * Consecuencia inequívoca de la última serie, leída del estado real
+   * del torneo (nunca se inventa en la UI).
+   */
+  function seriesConsequence(live, template) {
+    if (!live || !live.last) return null;
+    var last = live.last;
+    var won = last.won;
+    var tpl = template || D.TOURNAMENT_TEMPLATES[live.templateId];
+    var gr = groupRecord(live);
+    var elimLosses = GROUP_ELIM_LOSSES;
+
+    if (live.eliminated || live.elimReason === 'groups') {
+      return {
+        code: 'ELIMINATED_GROUPS',
+        label: 'ELIMINADO EN FASE DE GRUPOS',
+        detail: 'Has quedado eliminado en la fase de grupos. ' +
+          gr.wins + ' victorias — ' + gr.losses + ' derrotas',
+        tone: 'bad'
+      };
+    }
+
+    if (live.done && live.record) {
+      if (live.record.placement === 1) {
+        return { code: 'CHAMPION', label: 'CAMPEÓN', detail: live.record.result, tone: 'great' };
+      }
+      if (live.record.placement === 2) {
+        return { code: 'RUNNER_UP', label: 'SUBCAMPEÓN', detail: live.record.result, tone: 'good' };
+      }
+      if (won === false) {
+        var round = last.stage || 'Playoffs';
+        return {
+          code: 'ELIMINATED',
+          label: 'ELIMINADO',
+          detail: round.indexOf('Cuartos') >= 0 ? 'Eliminado en cuartos'
+            : (round.indexOf('Semifinal') >= 0 ? 'Eliminado en semifinales'
+              : (round.indexOf('Final') >= 0 ? 'Subcampeón / eliminado en la final'
+                : 'Eliminado · ' + round)),
+          tone: 'bad'
+        };
+      }
+      return { code: 'FINISHED', label: live.record.result, detail: null, tone: 'neutral' };
+    }
+
+    if (live.stage === 'group' || (last.stage && isGroupStageLabel(last.stage))) {
+      if (won === false && gr.losses >= elimLosses - 1 && gr.losses < elimLosses) {
+        return {
+          code: 'GROUPS_DANGER',
+          label: 'SIGUES EN FASE DE GRUPOS',
+          detail: gr.wins + 'V — ' + gr.losses + 'D · Una derrota más = eliminación',
+          tone: 'bad'
+        };
+      }
+      return {
+        code: 'GROUPS_CONTINUE',
+        label: 'SIGUES EN FASE DE GRUPOS',
+        detail: gr.wins + 'V — ' + gr.losses + 'D',
+        tone: won === true ? 'good' : (won === false ? 'bad' : 'neutral')
+      };
+    }
+
+    if (live.stage === 'playoff') {
+      var rounds = tpl ? tpl.playoff : 3;
+      var r = live.playoffR || 1;
+      if (won === true) {
+        if (r > rounds) {
+          return { code: 'CHAMPION', label: 'CAMPEÓN', detail: null, tone: 'great' };
+        }
+        var next = roundName(r, rounds);
+        return {
+          code: 'ADVANCE',
+          label: 'CLASIFICADO A ' + next.toUpperCase(),
+          detail: next,
+          tone: 'good'
+        };
+      }
+      if (won === false && live.lower) {
+        return {
+          code: 'LOWER',
+          label: 'SIGUES EN EL BRACKET INFERIOR',
+          detail: last.stage,
+          tone: 'bad'
+        };
+      }
+      if (won === false) {
+        return {
+          code: 'ELIMINATED',
+          label: 'ELIMINADO',
+          detail: last.stage,
+          tone: 'bad'
+        };
+      }
+    }
+
+    return {
+      code: 'CONTINUE',
+      label: 'SIGUES EN COMPETICIÓN',
+      detail: last.stage,
+      tone: won === true ? 'good' : 'neutral'
+    };
+  }
+
   function bracketPath(template) {
     if (!template) return [];
     var n = template.playoff || 0;
@@ -6251,6 +6859,7 @@ a { color: var(--ember); }
     canEnterPlayoffs: canEnterPlayoffs,
     usesGroupElim: usesGroupElim,
     sanitizeLive: sanitizeLive,
+    seriesConsequence: seriesConsequence,
     GROUP_ELIM_LOSSES: GROUP_ELIM_LOSSES
   };
 })(window.DCS = window.DCS || {});
@@ -6546,6 +7155,7 @@ a { color: var(--ember); }
     var score = pressure * 60 + U.norm(value, 25, 85) * 30 + U.norm(form, 30, 80) * 10;
     if (p.age <= 20) score += 5;
     if (p.age >= 31) score -= 8;
+    if (p.flags && p.flags.marketBuzz) score += U.clamp(p.flags.marketBuzz, -12, 12);
     var idx = score >= 68 ? 3 : (score >= 52 ? 2 : (score >= 34 ? 1 : 0));
     return { level: DEMAND_LEVELS[idx], index: idx };
   }
@@ -7098,24 +7708,40 @@ a { color: var(--ember); }
 
     return {
       changes: changes,
-      form: function (d) { p.form = U.clamp(p.form + d, 0, 100); },
-      morale: function (d) { p.morale = U.clamp(p.morale + d, 0, 100); },
-      rep: function (d) { p.reputation = U.clamp(p.reputation + d, 0, 100); },
-      synergy: function (d) { if (team) team.synergy = U.clamp(team.synergy + d, 10, 96); },
+      form: function (d) { p.form = U.clamp(p.form + d, 0, 100); note('form ' + (d > 0 ? '+' : '') + d); },
+      morale: function (d) { p.morale = U.clamp(p.morale + d, 0, 100); note('morale ' + (d > 0 ? '+' : '') + d); },
+      rep: function (d) { p.reputation = U.clamp(p.reputation + d, 0, 100); note('rep ' + (d > 0 ? '+' : '') + d); },
+      synergy: function (d) { if (team) team.synergy = U.clamp(team.synergy + d, 10, 96); note('synergy ' + (d > 0 ? '+' : '') + d); },
+      resources: function (d) {
+        if (!team) return;
+        team.resources = U.clamp(team.resources + d, 5, 99);
+        note('budget ' + (d > 0 ? '+' : '') + d);
+      },
       attrDrift: function (k, d) { p.attrs[k] = U.clamp(p.attrs[k] + d, 3, 99); p.overall = DCS.engine.player.overall(p); },
       capPenalty: function (k, d) { p.caps[k] = U.clamp(p.caps[k] - d, 15, 99); },
       capBoost: function (k, d) { p.caps[k] = U.clamp(p.caps[k] + d, 15, 99); },
       money: function (d) {
         state.career.earnings.other += d;
         if (season) season.earnings.other += d;
+        note('money ' + (d > 0 ? '+' : '') + d);
       },
       salary: function (mult) {
         if (p.contract) p.contract.salary = Math.round(p.contract.salary * mult);
       },
-      trainingBonus: function (x) { p.trainingMod = (p.trainingMod || 0) + x; },
-      trainingPenalty: function (x) { p.trainingMod = (p.trainingMod || 0) - x; },
+      trainingBonus: function (x) { p.trainingMod = (p.trainingMod || 0) + x; note('prep +'); },
+      trainingPenalty: function (x) { p.trainingMod = (p.trainingMod || 0) - x; note('prep -'); },
       captain: function (v) { p.isCaptain = !!v; if (team && v) team.synergy = U.clamp(team.synergy + 2, 10, 96); },
       flag: function (k, v) { p.flags[k] = v; },
+      marketBuzz: function (d) {
+        p.flags.marketBuzz = U.clamp((p.flags.marketBuzz || 0) + d, -20, 20);
+        note('market ' + (d > 0 ? '+' : '') + d);
+      },
+      highlight: function (text) {
+        if (!text) return;
+        state.career.highlights = state.career.highlights || [];
+        state.career.highlights.push({ year: state.year, text: text });
+        if (state.career.highlights.length > 40) state.career.highlights = state.career.highlights.slice(-40);
+      },
       rerollTeammate: function () {
         if (!team) return;
         var idx = [];
@@ -7142,6 +7768,57 @@ a { color: var(--ember); }
     };
   }
 
+  /** Señales recientes para conditions: rachas, títulos, eliminación. */
+  function careerSignals(state) {
+    var season = state.season || {};
+    var tours = season.tournaments || [];
+    var seriesLog = [];
+    tours.forEach(function (t) {
+      (t.log || []).forEach(function (s) { seriesLog.push(s); });
+    });
+    if (season.liveTour && season.liveTour.log) {
+      season.liveTour.log.forEach(function (s) { seriesLog.push(s); });
+    }
+    var recent = seriesLog.slice(-12);
+    var wins = 0, losses = 0, streak = 0, streakKind = null;
+    recent.forEach(function (s) {
+      if (s.won === true) wins++;
+      else if (s.won === false) losses++;
+    });
+    for (var i = recent.length - 1; i >= 0; i--) {
+      var w = recent[i].won;
+      if (w !== true && w !== false) break;
+      if (streakKind === null) streakKind = w ? 'W' : 'L';
+      if ((w ? 'W' : 'L') !== streakKind) break;
+      streak++;
+    }
+    var titlesThisYear = tours.filter(function (t) { return t.placement === 1; }).length;
+    var t1Win = tours.some(function (t) { return t.placement === 1 && (t.level === 't1' || t.prestige >= 8); });
+    var tiQual = tours.some(function (t) { return t.key === 'ti_qual' && t.qualified; }) ||
+      !!(season.comp && season.comp.ti && season.comp.ti.direct);
+    var earlyExit = tours.some(function (t) {
+      return t.eliminated || t.result === 'Eliminado en fase de grupos' ||
+        (t.placement && t.field && t.placement > t.field * 0.6 && t.prestige >= 6);
+    });
+    var upsetWin = !!(season.flags && season.flags.upsetWin);
+    var badLoss = !!(season.flags && season.flags.badLoss);
+
+    return {
+      recentWins: wins,
+      recentLosses: losses,
+      streak: streak,
+      streakKind: streakKind,
+      titlesThisYear: titlesThisYear,
+      t1Win: t1Win,
+      tiQual: tiQual,
+      earlyExit: earlyExit,
+      upsetWin: upsetWin,
+      badLoss: badLoss,
+      freeAgent: !state.player.teamId,
+      winRate: (wins + losses) ? wins / (wins + losses) : 0.5
+    };
+  }
+
   function buildContext(state, rng, season) {
     var p = state.player;
     var team = DCS.engine.world.getTeam(state, p.teamId);
@@ -7153,6 +7830,7 @@ a { color: var(--ember); }
       });
     var altRoles = D.ROLE_LIST.filter(function (r) { return r !== p.role; });
     var altRegions = D.REGION_LIST.filter(function (r) { return r !== p.region; });
+    var sig = careerSignals(state);
 
     var c = {
       state: state,
@@ -7163,31 +7841,98 @@ a { color: var(--ember); }
       rivalNames: rivals.length ? rivals : ['un rival de la región'],
       lastRating: state.career.lastRating === null || state.career.lastRating === undefined ? 55 : state.career.lastRating,
       altRole: rng.pick(altRoles),
-      altRegion: rng.pick(altRegions)
+      altRegion: rng.pick(altRegions),
+      sig: sig
     };
     c.fx = makeFx(state, rng, season);
     return c;
   }
 
+  var RARITY_CHANCE = { common: 0.18, major: 0.06, rare: 0.018, decision: 0.14 };
+  var RARITY_COOLDOWN = { common: 0, major: 1, rare: 3, decision: 0 };
+
+  function yearsSince(state, key) {
+    var log = state.eventLog || [];
+    for (var i = log.length - 1; i >= 0; i--) {
+      if (log[i].key === key) return state.year - log[i].year;
+    }
+    return 99;
+  }
+
+  function lastCategory(state) {
+    var log = state.eventLog || [];
+    return log.length ? log[log.length - 1].category : null;
+  }
+
+  function seasonRareCount(state) {
+    var log = state.eventLog || [];
+    var n = 0;
+    log.forEach(function (e) { if (e.year === state.year && e.rarity === 'rare') n++; });
+    return n;
+  }
+
   /**
-   * Extrae un evento para la fase indicada. Devuelve null si no toca.
+   * Extrae un evento para la fase indicada. Primero filtra por conditions,
+   * luego por rareza/cooldown, y solo entonces elige por peso.
    */
   function draw(state, rng, phase, season, chance) {
     if (!rng.chance(chance === undefined ? 0.5 : chance)) return null;
     var c = buildContext(state, rng, season);
+    state.eventLog = state.eventLog || [];
+    state.usedEvents = state.usedEvents || {};
+
+    var lastCat = lastCategory(state);
+    var rareThisYear = seasonRareCount(state);
 
     var pool = D.EVENTS.filter(function (e) {
       if (e.phase !== phase && e.phase !== 'any') return false;
-      if (state.usedEvents[e.id] && !rng.chance(0.35)) return false;   /* evita repetir demasiado */
-      try { return e.when(c); } catch (err) { return false; }
+      var rarity = e.rarity || (e.build && e.build.length ? 'common' : 'common');
+      if (e.options || (e._hasOptions)) rarity = e.rarity || 'decision';
+      /* cooldown por rareza / por evento */
+      var cd = typeof e.cooldown === 'number' ? e.cooldown : (RARITY_COOLDOWN[e.rarity || 'common'] || 0);
+      if (yearsSince(state, e.id) < cd) return false;
+      if ((e.rarity || 'common') === 'rare' && rareThisYear >= 1) return false;
+      if (state.usedEvents[e.id] && state.usedEvents[e.id] > 0 && (e.rarity || 'common') === 'rare') return false;
+      if (state.usedEvents[e.id] && !rng.chance(0.22)) return false;
+      try { if (!e.when(c)) return false; } catch (err) { return false; }
+      return true;
     });
     if (!pool.length) return null;
 
-    var chosen = rng.weighted(pool, function (e) { return Math.max(0, e.weight(c)); });
+    /* Evitar la misma categoría dos veces seguidas cuando hay alternativas. */
+    var diverse = pool.filter(function (e) { return (e.category || 'CAREER') !== lastCat; });
+    if (diverse.length) pool = diverse;
+
+    /* Rareza: los raros solo pasan el filtro de probabilidad local. */
+    pool = pool.filter(function (e) {
+      var r = e.rarity || 'common';
+      var ch = RARITY_CHANCE[r] != null ? RARITY_CHANCE[r] : 0.15;
+      /* Los que ya están en el pool por weight; aquí solo restringimos rare. */
+      if (r === 'rare') return rng.chance(Math.min(0.35, ch * 8));
+      if (r === 'major') return rng.chance(0.75);
+      return true;
+    });
+    if (!pool.length) return null;
+
+    var chosen = rng.weighted(pool, function (e) { return Math.max(0.01, e.weight(c)); });
     if (!chosen) return null;
 
     var built = chosen.build(c);
     state.usedEvents[chosen.id] = (state.usedEvents[chosen.id] || 0) + 1;
+    state.eventLog.push({
+      key: chosen.id,
+      year: state.year,
+      category: chosen.category || 'CAREER',
+      rarity: chosen.rarity || 'common',
+      title: built.title
+    });
+    if (state.eventLog.length > 80) state.eventLog = state.eventLog.slice(-80);
+
+    /* Highlights: solo major/rare o tono great. */
+    if ((chosen.rarity === 'rare' || chosen.rarity === 'major' || built.tone === 'great') && built.title) {
+      state.career.highlights = state.career.highlights || [];
+      state.career.highlights.push({ year: state.year, text: built.title });
+    }
 
     var inst = {
       id: 'e' + (state.counters.event++),
@@ -7197,44 +7942,60 @@ a { color: var(--ember); }
       title: built.title,
       text: built.text,
       tone: built.tone || 'neutral',
+      category: chosen.category || 'CAREER',
+      rarity: chosen.rarity || 'common',
       options: (built.options || []).map(function (o) { return { label: o.label, hint: o.hint }; }),
-      resolved: !built.options,
+      resolved: !built.options || !built.options.length,
+      applied: !built.options || !built.options.length,
       outcome: null
     };
-    if (built.options) {
-      /* las funciones no se serializan: se recuperan por clave al resolver */
+    if (built.options && built.options.length) {
       inst.pendingKey = chosen.id;
       inst.ctxSnapshot = { altRole: c.altRole, altRegion: c.altRegion };
+      inst.resolved = false;
+      inst.applied = false;
     }
     return inst;
   }
 
-  /** Resuelve una decisión pendiente aplicando la opción elegida. */
+  /** Resuelve una decisión pendiente aplicando la opción elegida UNA vez. */
   function resolve(state, rng, inst, optionIndex, season) {
+    if (inst.applied || inst.resolved && inst.outcome) {
+      return inst.outcome || 'Ya estaba resuelto.';
+    }
     var def = null;
     for (var i = 0; i < D.EVENTS.length; i++) if (D.EVENTS[i].id === inst.pendingKey) def = D.EVENTS[i];
-    if (!def) { inst.resolved = true; return 'La situación se resuelve sola.'; }
+    if (!def) { inst.resolved = true; inst.applied = true; return 'La situación se resuelve sola.'; }
 
     var c = buildContext(state, rng, season);
     if (inst.ctxSnapshot) {
       c.altRole = inst.ctxSnapshot.altRole;
       c.altRegion = inst.ctxSnapshot.altRegion;
     }
-    /* Los eventos con opciones no aplican efectos en build(): se puede
-       reconstruir sin riesgo para recuperar las funciones de cada opción. */
     var rebuilt = def.build(c);
     var opt = (rebuilt.options || [])[optionIndex];
-    if (!opt) { inst.resolved = true; return 'No haces nada.'; }
+    if (!opt) { inst.resolved = true; inst.applied = true; return 'No haces nada.'; }
 
     var text = opt.apply(c);
     inst.resolved = true;
+    inst.applied = true;
     inst.outcome = text;
     inst.chosen = opt.label;
+    if (def.rarity === 'rare' || def.rarity === 'major') {
+      state.career.highlights = state.career.highlights || [];
+      state.career.highlights.push({ year: state.year, text: inst.title + ' · ' + opt.label });
+    }
     return text;
   }
 
   DCS.engine = DCS.engine || {};
-  DCS.engine.events = { draw: draw, resolve: resolve, makeFx: makeFx, buildContext: buildContext };
+  DCS.engine.events = {
+    draw: draw,
+    resolve: resolve,
+    makeFx: makeFx,
+    buildContext: buildContext,
+    careerSignals: careerSignals
+  };
 })(window.DCS = window.DCS || {});
 
 </script>
@@ -7955,7 +8716,8 @@ a { color: var(--ember); }
       oppLevels: [],
       report: null,
       titles: 0,
-      role: p.role
+      role: p.role,
+      flags: { upsetWin: false, badLoss: false }
     };
     if (team) openStint(state, team);
     return state.season;
@@ -8402,6 +9164,10 @@ a { color: var(--ember); }
     var team = W().getTeam(state, p.teamId);
     var s = state.season;
     var acc = s.acc;
+    /* El buzz de mercado de eventos se enfría cada año. */
+    if (p.flags && p.flags.marketBuzz) {
+      p.flags.marketBuzz = Math.round(p.flags.marketBuzz * 0.35);
+    }
 
     var rating = acc.maps
       ? DCS.engine.performance.rate(state, acc, {
@@ -8774,6 +9540,7 @@ a { color: var(--ember); }
       offers: [],
       history: [],
       usedEvents: {},
+      eventLog: [],
       counters: { event: 1, offer: 1 },
       career: {
         maps: 0, wins: 0, losses: 0,
@@ -8786,7 +9553,8 @@ a { color: var(--ember); }
         bestRating: null, bestSeason: null, lastRating: null,
         peakReputation: 0,
         lastChangeYear: null,
-        lastRetirementPrompt: null
+        lastRetirementPrompt: null,
+        highlights: []
       }
     };
 
@@ -8955,6 +9723,13 @@ a { color: var(--ember); }
     }
     injectMissingCatalogTeams(state);
     migrateContractTerms(state);
+    if (!state.eventLog) state.eventLog = [];
+    if (!state.usedEvents) state.usedEvents = {};
+    if (state.career && !state.career.highlights) state.career.highlights = [];
+    if (state.season && !state.season.flags) state.season.flags = { upsetWin: false, badLoss: false };
+    if (state.player && state.player.flags && typeof state.player.flags.marketBuzz !== 'number') {
+      state.player.flags.marketBuzz = state.player.flags.marketBuzz || 0;
+    }
     /* Torneo a medias con 3 derrotas en grupos: no puede seguir en cuartos. */
     if (state.season && state.season.liveTour && !state.season.liveTour.done) {
       var live = state.season.liveTour;
@@ -10648,42 +11423,67 @@ a { color: var(--ember); }
     } : null);
 
     var vs = '';
-    if (show) {
+    if (show && !last) {
       vs = '<div class="match-vs">' +
         '<div class="match-side">' + c.teamMark(me, 'md') + '<span class="match-name">' + c.esc(me.name) + '</span></div>' +
         '<div class="match-mid">' +
           '<div class="match-stage">' + c.esc(show.stage) + '</div>' +
-          '<div class="match-score">' + (next ? '0-0' : (show.w + '-' + show.l)) + '</div>' +
+          '<div class="match-score">0-0</div>' +
           '<div class="match-fmt">' + c.esc(show.formatLabel || DCS.engine.tournaments.formatLabel(show.format)) + '</div>' +
         '</div>' +
         '<div class="match-side">' + c.teamMark(show.opp, 'md') + '<span class="match-name">' + c.esc(show.opp.name) + '</span></div>' +
         '</div>';
     }
 
-    var fate = '';
-    if (eliminatedGroups) {
-      fate = '<div class="elim-banner">' +
+    /* Resultado de la última serie: fuente de verdad = live.last */
+    var resultBlock = '';
+    if (last) {
+      var cons = DCS.engine.tournaments.seriesConsequence
+        ? DCS.engine.tournaments.seriesConsequence(live, tpl)
+        : null;
+      var isWin = last.won === true;
+      var isLoss = last.won === false;
+      var verdict = isWin ? 'VICTORIA' : (isLoss ? 'DERROTA' : 'EMPATE');
+      if (last.upset) verdict = 'GRAN VICTORIA';
+      if (last.disappointing) verdict = 'DERROTA DECEPCIONANTE';
+      var toneCls = isWin ? 'is-win' : (isLoss ? 'is-loss' : 'is-draw');
+      var oppName = last.opp && last.opp.name ? last.opp.name : 'Rival';
+      var deltasHtml = '';
+      if (last.deltas) {
+        var dlt = last.deltas;
+        var chips = [];
+        if (dlt.rep) chips.push('<span class="mr-chip ' + (dlt.rep > 0 ? 'good' : 'bad') + '">Reputación ' + (dlt.rep > 0 ? '+' : '') + dlt.rep + '</span>');
+        if (dlt.morale) chips.push('<span class="mr-chip ' + (dlt.morale > 0 ? 'good' : 'bad') + '">Moral ' + (dlt.morale > 0 ? '+' : '') + dlt.morale + '</span>');
+        if (dlt.form) chips.push('<span class="mr-chip ' + (dlt.form > 0 ? 'good' : 'bad') + '">Forma ' + (dlt.form > 0 ? '+' : '') + dlt.form + '</span>');
+        if (last.upset) chips.push('<span class="mr-chip good">Rival superior</span>');
+        if (last.disappointing) chips.push('<span class="mr-chip bad">Rival inferior</span>');
+        if (chips.length) deltasHtml = '<div class="mr-deltas">' + chips.join('') + '</div>';
+      }
+      var nextLine = '';
+      if (next && !live.done && !eliminatedGroups) {
+        nextLine = '<p class="mr-next">Siguiente: <b>' + c.esc(next.stage) + '</b>' +
+          (next.opp ? ' · vs ' + c.esc(next.opp.name) : '') + '</p>';
+      }
+      resultBlock = '<div class="match-result ' + toneCls + '">' +
+        '<div class="mr-verdict">' + verdict + '</div>' +
+        '<div class="mr-score">' + last.w + ' — ' + last.l + '</div>' +
+        '<div class="mr-opp">vs ' + c.esc(oppName) + '</div>' +
+        '<div class="mr-meta">' + c.esc(live.name) + ' · ' + c.esc(last.stage) + '</div>' +
+        (cons ? '<div class="mr-consequence">' + c.esc(cons.label) + '</div>' : '') +
+        (cons && cons.detail ? '<p class="mr-detail">' + c.esc(cons.detail) + '</p>' : '') +
+        (last.upset ? '<p class="mr-detail">Has derrotado a un rival claramente superior.</p>' : '') +
+        (last.disappointing ? '<p class="mr-detail">Has perdido contra un equipo claramente inferior.</p>' : '') +
+        deltasHtml + nextLine + '</div>';
+    } else if (eliminatedGroups) {
+      resultBlock = '<div class="elim-banner">' +
         '<div class="elim-title">ELIMINADO</div>' +
         '<p>Has quedado eliminado en la fase de grupos.</p>' +
         '<p class="elim-record">Resultado: <b>' + groupRec.wins + ' victorias — ' +
-        groupRec.losses + ' derrotas</b></p>' +
-        '</div>';
-    } else if (last && !live.done) {
-      if (last.won === true) fate = '<p class="good">Avanzas. Siguiente serie abajo.</p>';
-      else if (last.won === false) {
-        if (live.stage === 'group') {
-          var gl = live.groupLosses || groupRec.losses || 0;
-          fate = '<p class="bad">Derrota en grupos (' + gl + '/3)' +
-            (gl >= 2 ? '. Una más y quedas eliminado.' : '.') + '</p>';
-        } else {
-          fate = '<p class="bad">Derrota. Sigues con vida en el bracket.</p>';
-        }
-      } else fate = '<p class="muted">Empate en la serie.</p>';
-    }
-    if (!eliminatedGroups && live.done && live.record) {
-      if (live.record.placement === 1) fate = '<p class="good">Ganas el torneo. ' + c.esc(live.record.result) + '.</p>';
-      else if (last && last.won === false) fate = '<p class="bad">Eliminado. ' + c.esc(live.record.result) + '.</p>';
-      else fate = '<p>' + c.esc(live.record.result) + '</p>';
+        groupRec.losses + ' derrotas</b></p></div>';
+    } else if (live.done && live.record) {
+      resultBlock = '<div class="match-result ' + (live.record.placement === 1 ? 'is-win' : 'is-loss') + '">' +
+        '<div class="mr-verdict">' + (live.record.placement === 1 ? 'CAMPEÓN' : c.esc(live.record.result)) + '</div>' +
+        '<div class="mr-meta">' + c.esc(live.name) + '</div></div>';
     }
 
     var lastCard = '';
@@ -10691,12 +11491,9 @@ a { color: var(--ember); }
       var acc = DCS.engine.stats.blank(state.player.role);
       (last.maps || []).forEach(function (m) { DCS.engine.stats.add(acc, m.line, m.win); });
       var avg = DCS.engine.stats.averages(acc);
-      var resTxt = last.won === true ? 'Victoria' : (last.won === false ? 'Derrota' : 'Empate');
       lastCard = c.card({
-        title: 'Serie jugada',
-        meta: c.badge(resTxt, last.won === true ? 'gold' : 'muted'),
-        body: '<div class="kv"><span>Marcador</span><span>' + last.w + '-' + last.l + '</span></div>' +
-          '<div class="kv"><span>Mapas</span><span>' + acc.wins + ' ganados · ' + acc.losses + ' perdidos</span></div>' +
+        title: 'Detalle de la serie',
+        body: '<div class="kv"><span>Mapas</span><span>' + acc.wins + ' ganados · ' + acc.losses + ' perdidos</span></div>' +
           (acc.maps ? '<div class="mt">' + c.statBars(state.player.role, avg) + '</div>' : '')
       });
     }
@@ -10722,7 +11519,6 @@ a { color: var(--ember); }
         ' · ' + live.record.seriesWon + '-' + live.record.seriesLost + ' series</p>';
     }
 
-    /* Eliminado en grupos: solo Continuar. Sin botones de cuartos/playoffs. */
     var actions = live.done || eliminatedGroups
       ? c.btn('Continuar', 'tour-continue', { variant: 'primary' })
       : c.btn('Simular serie', 'tour-series', { variant: 'primary' }) +
@@ -10741,10 +11537,9 @@ a { color: var(--ember); }
       })
       : '';
 
-    return head + c.card({ title: next ? 'Próxima serie' : 'Resultado', body: vs + fate + '<div class="row mt match-actions">' + actions + '</div>' }) +
-      payout +
-      lastCard +
-      history +
+    var cardTitle = last ? 'Resultado' : (next ? 'Próxima serie' : 'Resultado');
+    return head + c.card({ title: cardTitle, body: vs + resultBlock + '<div class="row mt match-actions">' + actions + '</div>' }) +
+      payout + lastCard + history +
       c.card({ title: 'Camino al título', subtitle: 'De la fase actual hasta la eliminación o el campeonato.', body: stagesHtml });
   };
 
