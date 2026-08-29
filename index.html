@@ -4769,7 +4769,7 @@ a { color: var(--ember); }
       regionKey: 'openCup',
       prestige: 3, tier: 3, field: 8, groupSeries: 3, format: 'bo1',
       playoff: 3, playoffFormat: 'bo3', prizeRange: [20000, 50000], split: 'flat',
-      regional: true, chance: 0.5,
+      regional: true, chance: 0.85,
       logo: null
     },
     t2_league: {
@@ -8404,7 +8404,7 @@ a { color: var(--ember); }
 
     if (team.tier === 3) {
       push('t3_league');
-      if (rng.chance(0.6)) push('t3_online');
+      if (rng.chance(0.85)) push('t3_online');
       if (rng.chance(0.8)) pushGated('t2_intl');
     } else if (team.tier === 2) {
       push('t2_league');
