@@ -5279,6 +5279,11 @@ a { color: var(--ember); }
 
   function has(c) { return !!c.team; }
   function young(c) { return c.player.age <= 22; }
+  /* Helper de resultado: las opciones de decisión lo usan al resolver.
+     Tiene que vivir AQUÍ (mismo IIFE que EVENTS), no en el motor. */
+  function evOut(key, text, vars) {
+    return { key: key, text: text, vars: vars || null };
+  }
 
   var EVENTS = [
     /* ---------------------------------------------------------
@@ -11428,7 +11433,14 @@ a { color: var(--ember); }
       return live;
     }
     if (rest) {
-      while (!live.done) DCS.engine.tournaments.step(state, rng, live, team);
+      var guard = 0;
+      while (!live.done && guard++ < 80) DCS.engine.tournaments.step(state, rng, live, team);
+      if (!live.done && guard >= 80) {
+        live.done = true;
+        live.eliminated = true;
+        var tplHang = D.TOURNAMENT_TEMPLATES[live.templateId];
+        live.placement = live.placement || (tplHang && tplHang.field) || 16;
+      }
     } else {
       DCS.engine.tournaments.step(state, rng, live, team);
     }
@@ -11823,9 +11835,16 @@ a { color: var(--ember); }
     var ev = findUnresolvedEvent(state);
     if (!ev) { state.pending = null; return null; }
     var rng = DCS.runtime.get();
-    var text = DCS.engine.events.resolve(state, rng, ev, optionIndex, state.season);
+    var text;
+    try {
+      text = DCS.engine.events.resolve(state, rng, ev, optionIndex, state.season);
+    } catch (err) {
+      ev.resolved = true;
+      ev.applied = true;
+      text = ev.outcome || '';
+    }
     state.pending = null;
-    return { event: ev, outcome: text };
+    return { event: ev, outcome: text, outcomeKey: ev.outcomeKey, vars: ev.vars };
   }
 
   DCS.engine = DCS.engine || {};
@@ -13156,10 +13175,14 @@ a { color: var(--ember); }
       el.appendChild(backdrop);
       el.appendChild(panel);
 
-      /* Bloquea clics al UI de debajo sin cerrar ni disparar acciones. */
-      ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'contextmenu'].forEach(function (ev) {
+      /* Bloquea clics al UI de debajo; un clic cierra el mensaje. */
+      ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'contextmenu'].forEach(function (ev) {
         el.addEventListener(ev, swallow, true);
       });
+      el.addEventListener('click', function (e) {
+        swallow(e);
+        dismiss();
+      }, true);
 
       if (life !== LIFE_MS) {
         backdrop.style.animationDuration = life + 'ms';
