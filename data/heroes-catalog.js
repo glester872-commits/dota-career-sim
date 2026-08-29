@@ -13,6 +13,53 @@
     pos5: ['Support', 'Disabler', 'Nuker']
   };
 
+  /* Posiciones habituales (no solo atributo primario). IDs OpenDota. */
+  var POSITION_POOLS = {
+    carry: [1,6,8,10,11,12,18,32,35,41,42,44,46,47,48,54,61,63,67,70,72,73,77,80,81,82,89,93,94,95,106,109,113,114,145],
+    mid: [11,13,17,19,21,22,25,34,35,36,39,43,45,46,47,52,59,61,65,74,75,76,82,97,106,113,114,120,126,129,137,138],
+    offlane: [2,14,16,23,28,29,38,51,55,60,69,71,78,96,97,98,99,100,102,103,104,107,108,129,135,136,137],
+    pos4: [7,9,14,19,20,40,50,51,62,65,71,83,84,85,86,87,88,100,101,105,107,110,119,123,128,136],
+    pos5: [3,5,26,27,30,31,37,50,57,58,64,66,68,79,83,84,86,87,90,91,92,101,102,111,112,121,128,131]
+  };
+
+  function poolForPosition(role) {
+    var ids = POSITION_POOLS[role] || POSITION_POOLS.mid;
+    var pool = [];
+    for (var i = 0; i < ids.length; i++) {
+      if (BY_ID[ids[i]]) pool.push(BY_ID[ids[i]]);
+    }
+    return pool.length ? pool : HEROES.slice();
+  }
+
+  /** Tres héroes preferidos permanentes, acordes al rol. Semilla estable. */
+  function ensurePreferred(state) {
+    if (!state || !state.career) return [];
+    var existing = state.career.preferredHeroIds;
+    if (Array.isArray(existing) && existing.length === 3) {
+      var ok = true;
+      for (var i = 0; i < 3; i++) {
+        if (!BY_ID[existing[i]]) { ok = false; break; }
+      }
+      if (ok) return existing.slice();
+    }
+    var role = (state.player && state.player.role) || 'mid';
+    var pool = poolForPosition(role).slice();
+    var rng = new DCS.rng.Rng(String(state.seed) + '|PREFHEROES|' + role, 0);
+    var picked = [];
+    while (picked.length < 3 && pool.length) {
+      var idx = rng.int(0, pool.length - 1);
+      picked.push(pool[idx].id);
+      pool.splice(idx, 1);
+    }
+    state.career.preferredHeroIds = picked;
+    return picked.slice();
+  }
+
+  function preferredHeroes(state) {
+    return ensurePreferred(state).map(function (id) { return get(id); }).filter(Boolean);
+  }
+
+
   function portraitUrl(hero) {
     if (!hero) return '';
     if (hero.img && hero.img.indexOf('http') === 0) return hero.img;
@@ -94,9 +141,12 @@
     get: get,
     portraitUrl: portraitUrl,
     poolForRole: poolForRole,
+    poolForPosition: poolForPosition,
     pickForMap: pickForMap,
     record: record,
     topThree: topThree,
-    ensureStats: ensureStats
+    ensureStats: ensureStats,
+    ensurePreferred: ensurePreferred,
+    preferredHeroes: preferredHeroes
   };
 })(window.DCS = window.DCS || {});

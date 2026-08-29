@@ -122,6 +122,14 @@ ${LANG_CSS_MARK}
 .mail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .mail-result { margin-top: 10px; }
 .nav-inbox-ico { font-size: 14px; opacity: .9; }
+.pref-hero-list {
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;
+}
+.pref-hero { display: flex; flex-direction: column; gap: 6px; width: 88px; }
+.pref-hero-name { font-size: 12px; font-weight: 650; line-height: 1.25; }
+@media (max-width: 720px) {
+  .pref-hero { width: 72px; }
+}
 @media (max-width: 720px) {
   .hero-portrait { width: 56px; height: 32px; }
   .mail-row { padding: 10px 12px; }
