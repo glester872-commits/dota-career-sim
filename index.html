@@ -6943,7 +6943,9 @@ a { color: var(--ember); }
     }
 
     if (live.stage === 'group' || (last.stage && isGroupStageLabel(last.stage))) {
-      if (won === false && gr.losses >= elimLosses - 1 && gr.losses < elimLosses) {
+      var isLeague = (tpl && tpl.kind === 'league') || last.stage === 'Liga regular';
+      var stageLabel = isLeague ? 'LIGA REGULAR' : 'FASE DE GRUPOS';
+      if (!isLeague && won === false && gr.losses >= elimLosses - 1 && gr.losses < elimLosses) {
         return {
           code: 'GROUPS_DANGER',
           label: 'SIGUES EN FASE DE GRUPOS',
@@ -6952,8 +6954,8 @@ a { color: var(--ember); }
         };
       }
       return {
-        code: 'GROUPS_CONTINUE',
-        label: 'SIGUES EN FASE DE GRUPOS',
+        code: isLeague ? 'LEAGUE_CONTINUE' : 'GROUPS_CONTINUE',
+        label: 'SIGUES EN ' + stageLabel,
         detail: gr.wins + 'V — ' + gr.losses + 'D',
         tone: won === true ? 'good' : (won === false ? 'bad' : 'neutral')
       };
@@ -11785,8 +11787,16 @@ a { color: var(--ember); }
       if (typeLabel === verdict) typeLabel = '';
       var toneCls = isWin ? 'is-win' : (isLoss ? 'is-loss' : 'is-draw');
       var oppRef = last.opp || { name: 'Rival' };
-      var oppTeam = (oppRef.id && DCS.engine.world.getTeam(state, oppRef.id)) || oppRef;
+      var oppTeam = null;
+      if (oppRef.id) oppTeam = DCS.engine.world.getTeam(state, oppRef.id);
+      if (!oppTeam && oppRef.name && DCS.data.lookupTeam) oppTeam = DCS.data.lookupTeam(oppRef.name);
+      if (!oppTeam && oppRef.name && DCS.data.TEAM_BY_NAME) oppTeam = DCS.data.TEAM_BY_NAME[oppRef.name];
+      if (!oppTeam) oppTeam = oppRef;
       var homeTeam = me;
+      if (live.teamId) {
+        var homeFull = DCS.engine.world.getTeam(state, live.teamId);
+        if (homeFull) homeTeam = homeFull;
+      }
       var deltasHtml = '';
       if (last.deltas) {
         var dlt = last.deltas;
