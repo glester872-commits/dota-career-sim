@@ -7059,9 +7059,20 @@ a { color: var(--ember); }
   };
 
   /** probabilidad de ganar un mapa, acotada para evitar determinismo */
-  function mapWinProbability(us, them) {
-    var p = U.logistic(us - them, 16);
-    return U.clamp(p, 0.10, 0.90);
+  function mapWinProbability(us, them, ctx) {
+    var prestige = (ctx && typeof ctx.prestige === 'number') ? ctx.prestige : null;
+    /* Curva más plana fuera del máximo nivel → más títulos regionales posibles.
+       En The International la curva se endurece un poco. */
+    var scale = 16;
+    if (prestige != null && prestige < 7) scale = 22;
+    else if (prestige != null && prestige < 9) scale = 18;
+    if (prestige != null && prestige >= 10) scale = 12.5;
+    var p = U.logistic(us - them, scale);
+    var lo = 0.10;
+    if (prestige != null && prestige < 7) lo = 0.15;
+    else if (prestige != null && prestige < 9) lo = 0.12;
+    if (prestige != null && prestige >= 10) lo = 0.06;
+    return U.clamp(p, lo, 0.90);
   }
 
   /**
@@ -7116,8 +7127,9 @@ a { color: var(--ember); }
     var indiv = (level - DCS.engine.player.effectiveLevel(p, team)) * role.impact * 0.55;
     var us = teamLevel + indiv + (ctx.momentum || 0) + rng.gauss(0, 1.6);
     var them = oppLevel + rng.gauss(0, 1.6);
+    /* ctx.prestige opcional: ajuste de suelo según el evento */
 
-    var pWin = mapWinProbability(us, them);
+    var pWin = mapWinProbability(us, them, ctx);
     var win = rng.chance(pWin);
 
     return {
@@ -7143,7 +7155,8 @@ a { color: var(--ember); }
         teamLevel: ctx.teamLevel,
         oppLevel: ctx.oppLevel,
         momentum: momentum,
-        varMul: ctx.varMul
+        varMul: ctx.varMul,
+        prestige: ctx.prestige
       });
       maps.push(res);
       if (res.win) { mapsWon++; momentum = U.clamp(momentum + 1.1, -2.6, 2.6); }
@@ -7550,12 +7563,22 @@ a { color: var(--ember); }
     return template.kind === 'league' ? 'LEAGUE' : 'GROUP_STAGE';
   }
 
-  /* En fase de grupos (no en liga regular) la tercera derrota elimina.
-     Es el formato Swiss del circuito: 0-2 derrotas sigues, 3 sales. */
-  var GROUP_ELIM_LOSSES = 3;
+  /* Eliminación por derrotas en grupos: solo en eventos de alto prestigio.
+     En el resto del circuito las derrotas de grupos no cortan el torneo
+     tan pronto (si no, ganar cualquier título se vuelve demasiado raro). */
+  var GROUP_ELIM_LOSSES = 3; /* legacy default / TI */
+
+  function groupElimLimit(template) {
+    if (!template || !(template.groupSeries > 0) || template.kind === 'league') return 0;
+    var p = template.prestige || 0;
+    /* Solo The International (y equivalentes p>=10) elimina por derrotas en grupos.
+       Aplicarlo a majors/T1 era lo que hundía la tasa de “ganar algo”. */
+    if (p >= 10) return 3;
+    return 0;
+  }
 
   function usesGroupElim(template) {
-    return !!(template && template.groupSeries > 0 && template.kind !== 'league');
+    return groupElimLimit(template) > 0;
   }
 
   function isGroupStageLabel(stage) {
@@ -7585,7 +7608,8 @@ a { color: var(--ember); }
        Durante el juego, step() mantiene los contadores alineados con el log. */
     live.groupLosses = rec.losses;
     live.groupWins = rec.wins + rec.draws * 0.5;
-    if (usesGroupElim(template) && live.groupLosses >= GROUP_ELIM_LOSSES) {
+    var lim = groupElimLimit(template);
+    if (lim > 0 && live.groupLosses >= lim) {
       live.eliminated = true;
       live.qualifiedForPlayoffs = false;
     }
@@ -7659,8 +7683,10 @@ a { color: var(--ember); }
   }
 
   function playSeries(state, rng, live, team, oppLevel, format, stage, opponent, oppIndex) {
+    var tpl = live.templateId && D.TOURNAMENT_TEMPLATES[live.templateId];
     var r = DCS.engine.match.simulateSeries(state, rng, {
-      team: team, teamLevel: live.teamLevel, oppLevel: oppLevel, format: format
+      team: team, teamLevel: live.teamLevel, oppLevel: oppLevel, format: format,
+      prestige: (tpl && tpl.prestige) || live.prestige || null
     });
     r.maps.forEach(function (m, mi) {
       if (DCS.engine.heroes && DCS.engine.heroes.pickForMap) {
@@ -7878,7 +7904,7 @@ a { color: var(--ember); }
   function canEnterPlayoffs(live, template) {
     syncGroupFlags(live, template);
     if (live.eliminated) return false;
-    if (usesGroupElim(template) && live.groupLosses >= GROUP_ELIM_LOSSES) return false;
+    if (usesGroupElim(template) && live.groupLosses >= groupElimLimit(template)) return false;
     return true;
   }
 
@@ -7892,7 +7918,10 @@ a { color: var(--ember); }
 
     var cut = Math.min(template.field, Math.pow(2, template.playoff));
     var groupRatio = template.groupSeries ? live.groupWins / template.groupSeries : 0.5;
-    var needed = 0.42 + (template.prestige >= 8 ? 0.10 : 0) + (template.cutBonus || 0) + rng.range(-0.06, 0.06);
+    /* Listón de playoffs: más asequible en el circuito regional/T2 para que
+       “ganar algo” vuelva a ser habitual; el TI sigue exigente. */
+    var needed = 0.27 + (template.prestige >= 8 ? 0.20 : 0) + (template.prestige >= 10 ? 0.10 : 0) +
+      (template.cutBonus || 0) + rng.range(-0.05, 0.05);
     live.needed = needed;
     var advanced = cut >= template.field ? true : groupRatio >= needed;
     if (!advanced) {
@@ -7949,7 +7978,13 @@ a { color: var(--ember); }
         strengths: field.strengths.slice()
       },
       names: names,
-      avgOpp: field.strengths.length ? U.avg(field.strengths) : 55,
+      avgOpp: (function () {
+        var a = field.strengths.length ? U.avg(field.strengths) : 55;
+        var pr = template.prestige || 0;
+        if (pr < 7) a -= 5;
+        else if (pr < 9) a -= 2.5;
+        return a;
+      })(),
       teamLevel: DCS.engine.world.teamStrength(state, team, true),
       acc: DCS.engine.stats.blank(state.player.role),
       log: [],
@@ -7984,7 +8019,7 @@ a { color: var(--ember); }
     if (!template) return null;
     syncGroupFlags(live, template);
     /* Eliminado en grupos: no hay próxima serie ni cuartos. */
-    if (live.eliminated || (usesGroupElim(template) && live.groupLosses >= GROUP_ELIM_LOSSES)) {
+    if (live.eliminated || (usesGroupElim(template) && live.groupLosses >= groupElimLimit(template))) {
       return null;
     }
     if (live.stage === 'group') {
@@ -8048,7 +8083,7 @@ a { color: var(--ember); }
       live.groupI++;
 
       /* Tercera derrota en fase de grupos → eliminado al instante. */
-      if (usesGroupElim(template) && live.groupLosses >= GROUP_ELIM_LOSSES) {
+      if (usesGroupElim(template) && live.groupLosses >= groupElimLimit(template)) {
         live.eliminated = true;
         live.qualifiedForPlayoffs = false;
         return eliminateInGroups(state, rng, live, team, template);
@@ -8131,7 +8166,7 @@ a { color: var(--ember); }
     var won = last.won;
     var tpl = template || D.TOURNAMENT_TEMPLATES[live.templateId];
     var gr = groupRecord(live);
-    var elimLosses = GROUP_ELIM_LOSSES;
+    var elimLosses = groupElimLimit(template) || GROUP_ELIM_LOSSES;
 
     if (live.eliminated || live.elimReason === 'groups') {
       return {
@@ -8256,20 +8291,20 @@ a { color: var(--ember); }
 
     if (lv.id === 'ti') {
       /* Tier 3 no pisa The International en un año. Tier 2 solo por clasificatoria.
-         Tier 1: invitación por ranking o Regional Qualifier. */
+         Tier 1: invitación rara (top del ranking) o Regional Qualifier. */
       if (team.tier >= 3) return null;
       if (team.tier === 1) {
-        var inviteOdds = rank <= 4 ? 0.82 : (rank <= 8 ? 0.55 : (rank <= 12 ? 0.28 : 0.08));
-        if (rep >= 70) inviteOdds += 0.10;
-        if (rng.chance(U.clamp(inviteOdds, 0.05, 0.92))) {
+        var inviteOdds = rank <= 2 ? 0.14 : (rank <= 4 ? 0.07 : (rank <= 8 ? 0.025 : 0.004));
+        if (rep >= 80) inviteOdds += 0.03;
+        if (rng.chance(U.clamp(inviteOdds, 0.002, 0.20))) {
           return { access: 'invite', route: [] };
         }
-        if (rank <= 24 || rep >= 40 || (req && rank <= (req.maxRank || 24))) {
+        if (rank <= 16 || rep >= 55 || (req && rank <= (req.maxRank || 16))) {
           return { access: 'closed', route: ['ti_qual'] };
         }
         return null;
       }
-      if (q >= 70 && (rank <= 30 || rep >= 50)) return { access: 'closed', route: ['ti_qual'] };
+      if (q >= 78 && (rank <= 20 || rep >= 60)) return { access: 'closed', route: ['ti_qual'] };
       return null;
     }
 
@@ -8423,7 +8458,8 @@ a { color: var(--ember); }
     sanitizeLive: sanitizeLive,
     seriesConsequence: seriesConsequence,
     getMatchResultType: getMatchResultType,
-    GROUP_ELIM_LOSSES: GROUP_ELIM_LOSSES
+    GROUP_ELIM_LOSSES: GROUP_ELIM_LOSSES,
+    groupElimLimit: groupElimLimit
   };
 })(window.DCS = window.DCS || {});
 
@@ -10797,7 +10833,7 @@ a { color: var(--ember); }
      se puede ser leyenda sin ganar TI, pero no sin ganar nada.     */
   var CATEGORIES = [
     {
-      min: 92, name: 'Candidato a GOAT', gate: function (x) { return x.tiWon >= 1 && x.bigTitles >= 2; },
+      min: 92, name: 'Candidato a GOAT', gate: function (x) { return x.tiWon >= 1 && (x.tiPlayed >= 2 || x.bigTitles >= 7); },
       desc: 'Cuando se discuta quién fue el mejor de la historia, tu nombre estará en la conversación.'
     },
     {
