@@ -7075,12 +7075,12 @@ a { color: var(--ember); }
     var scale = 16;
     if (prestige != null && prestige < 7) scale = 24;
     else if (prestige != null && prestige < 9) scale = 19;
-    if (prestige != null && prestige >= 10) scale = 17.9;
+    if (prestige != null && prestige >= 10) scale = 18.4;
     var p = U.logistic(us - them, scale);
     var lo = 0.10;
     if (prestige != null && prestige < 7) lo = 0.18;
     else if (prestige != null && prestige < 9) lo = 0.14;
-    if (prestige != null && prestige >= 10) lo = 0.105;
+    if (prestige != null && prestige >= 10) lo = 0.12;
     return U.clamp(p, lo, 0.90);
   }
 
@@ -7997,7 +7997,7 @@ a { color: var(--ember); }
         var pr = template.prestige || 0;
         if (pr < 7) a -= 5;
         else if (pr < 9) a -= 2.5;
-        else if (pr >= 10) a -= 3;
+        else if (pr >= 10) a -= 3.5;
         return a;
       })(),
       teamLevel: DCS.engine.world.teamStrength(state, team, true),
