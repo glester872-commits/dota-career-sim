@@ -12603,6 +12603,9 @@ a { color: var(--ember); }
 
   var fmt = DCS.ui.fmt;
   var U = DCS.util;
+  function t(key, vars, fb) {
+    return (DCS.t && DCS.t(key, vars, fb)) || fb || '';
+  }
 
   function esc(s) {
     if (s === null || s === undefined) return '';
@@ -15975,17 +15978,22 @@ a { color: var(--ember); }
     render: function () {
       var state = DCS.game.state;
       var html;
-
-      if (app.view === 'home') html = S.home();
-      else if (app.view === 'create') html = S.create(app.draft || (app.draft = app.newDraft()));
-      else if (app.view === 'about') html = S.about();
-      else if (!state) { app.view = 'home'; html = S.home(); }
-      else html = app.shell(state);
-
+      try {
+        if (app.view === 'home') html = S.home();
+        else if (app.view === 'create') html = S.create(app.draft || (app.draft = app.newDraft()));
+        else if (app.view === 'about') html = S.about();
+        else if (!state) { app.view = 'home'; html = S.home(); }
+        else html = app.shell(state);
+      } catch (err) {
+        html = '<div class="app"><main class="main"><p class="empty">No se pudo pintar esta pantalla. Recarga o continúa la temporada.</p></main></div>';
+        if (window.console && console.error) console.error(err);
+      }
       app.root.innerHTML = html;
       if (app.view === 'create') app.wireCreate();
-      if (state && state.pending) app.renderModal(state);
-      DCS.ui.anim.countUp(app.root);
+      if (state && state.pending) {
+        try { app.renderModal(state); } catch (e2) { /* no bloquear el juego */ }
+      }
+      if (DCS.ui.anim && DCS.ui.anim.countUp) DCS.ui.anim.countUp(app.root);
     },
 
     shell: function (state) {
@@ -16471,19 +16479,22 @@ a { color: var(--ember); }
         }
 
         case 'tour-series':
-          DCS.game.simSeries();
+          try { DCS.game.simSeries(); } catch (e) { if (window.console) console.error(e); }
           app.render();
           return;
 
         case 'tour-rest':
-          DCS.game.simTournament();
+          try { DCS.game.simTournament(); } catch (e) { if (window.console) console.error(e); }
           app.render();
           return;
 
         case 'tour-continue': {
-          var next = DCS.game.continueCalendar();
+          var next = null;
+          try { next = DCS.game.continueCalendar(); } catch (e) { if (window.console) console.error(e); }
           app.render();
-          if (next && next.type === 'competition') DCS.ui.anim.celebrateFromReport(next);
+          if (next && next.type === 'competition' && DCS.ui.anim && DCS.ui.anim.celebrateFromReport) {
+            DCS.ui.anim.celebrateFromReport(next);
+          }
           return;
         }
 
