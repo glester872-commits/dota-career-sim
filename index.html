@@ -4769,7 +4769,7 @@ a { color: var(--ember); }
       regionKey: 'openCup',
       prestige: 3, tier: 3, field: 8, groupSeries: 3, format: 'bo1',
       playoff: 3, playoffFormat: 'bo3', prizeRange: [20000, 50000], split: 'flat',
-      regional: true, chance: 0.72,
+      regional: true, chance: 0.78,
       logo: null
     },
     t2_league: {
@@ -7934,7 +7934,7 @@ a { color: var(--ember); }
     var groupRatio = template.groupSeries ? live.groupWins / template.groupSeries : 0.5;
     /* Listón de playoffs: más asequible en el circuito regional/T2 para que
        “ganar algo” vuelva a ser habitual; el TI sigue exigente. */
-    var needed = 0.20 + (template.prestige >= 8 ? 0.20 : 0) + (template.prestige >= 10 ? 0.04 : 0) +
+    var needed = 0.18 + (template.prestige >= 8 ? 0.22 : 0) + (template.prestige >= 10 ? 0.04 : 0) +
       (template.cutBonus || 0) + rng.range(-0.05, 0.05);
     live.needed = needed;
     var advanced = cut >= template.field ? true : groupRatio >= needed;
@@ -8404,7 +8404,7 @@ a { color: var(--ember); }
 
     if (team.tier === 3) {
       push('t3_league');
-      if (rng.chance(0.72)) push('t3_online');
+      if (rng.chance(0.78)) push('t3_online');
       if (rng.chance(0.8)) pushGated('t2_intl');
     } else if (team.tier === 2) {
       push('t2_league');
