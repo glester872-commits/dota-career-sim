@@ -2545,7 +2545,7 @@ a { color: var(--ember); }
 .bad { color: var(--red); }
 .gold { color: var(--gold); }
 
-/* Mensaje centrado: solo texto, no bloquea clics */
+/* Mensaje centrado: recuadro + fondo opacado (no interactivo) */
 .center-msg {
   position: fixed;
   inset: 0;
@@ -2553,34 +2553,57 @@ a { color: var(--ember); }
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
   padding: 24px;
+  pointer-events: auto;
 }
-.center-msg > span {
+.center-msg-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 6, 10, .58);
+  animation: centerMsgBackdrop 1.85s cubic-bezier(.22, .82, .28, 1) both;
+}
+.center-msg-panel {
+  position: relative;
+  z-index: 1;
+  max-width: min(92vw, 28rem);
+  width: max-content;
+  padding: 18px 26px;
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-s), 0 0 0 1px rgba(0, 0, 0, .25);
+  pointer-events: none;
+  animation: centerMsgPanel 1.85s cubic-bezier(.22, .82, .28, 1) both;
+}
+.center-msg-panel > span {
+  display: block;
   font-family: var(--sans);
-  font-size: clamp(17px, 2.8vw, 26px);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1.35;
+  font-size: clamp(15px, 2.4vw, 20px);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
   color: var(--text);
   text-align: center;
-  max-width: min(92vw, 34rem);
-  /* contraste sobre cualquier escena, sin caja */
-  text-shadow:
-    0 0 1px rgba(0, 0, 0, .95),
-    0 1px 2px rgba(0, 0, 0, .9),
-    0 2px 14px rgba(0, 0, 0, .75),
-    0 0 28px rgba(0, 0, 0, .45);
-  animation: centerMsgLife 1.85s cubic-bezier(.22, .82, .28, 1) both;
 }
-@keyframes centerMsgLife {
-  0%   { opacity: 0; transform: translateY(10px) scale(.985); }
-  12%  { opacity: 1; transform: none; }
+@keyframes centerMsgBackdrop {
+  0%   { opacity: 0; }
+  14%  { opacity: 1; }
+  72%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes centerMsgPanel {
+  0%   { opacity: 0; transform: translateY(10px) scale(.97); }
+  14%  { opacity: 1; transform: none; }
   72%  { opacity: 1; transform: none; }
-  100% { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 0; transform: translateY(-6px) scale(.99); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .center-msg > span { animation-duration: .01ms; opacity: 1; }
+  .center-msg-backdrop,
+  .center-msg-panel {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Aparición escalonada de los bloques */
@@ -3049,7 +3072,8 @@ a { color: var(--ember); }
   .choice { min-height: 48px; padding: 14px; }
 
   .center-msg { padding: 16px; }
-  .center-msg > span { font-size: clamp(16px, 4.4vw, 22px); }
+  .center-msg-panel { padding: 16px 20px; max-width: calc(100vw - 32px); }
+  .center-msg-panel > span { font-size: clamp(15px, 4.2vw, 18px); }
 
   /* Inicio */
   .hero-stage {
@@ -12220,11 +12244,11 @@ a { color: var(--ember); }
 </script>
 <script>
 /* ============================================================
-   UI / CENTER MSG — mensaje breve centrado (solo texto)
+   UI / CENTER MSG — notificación centrada con recuadro
    ------------------------------------------------------------
    Uso: DCS.ui.centerMsg('Decisión aceptada')
         DCS.centerMsg('Acción completada')
-   Un solo mensaje a la vez; no bloquea clics.
+   Un solo mensaje a la vez. Capa de fondo no interactiva.
    ============================================================ */
 (function (DCS) {
   'use strict';
@@ -12246,8 +12270,13 @@ a { color: var(--ember); }
     current = null;
   }
 
+  function swallow(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
   /**
-   * Muestra un mensaje centrado en pantalla.
+   * Muestra un mensaje centrado con fondo opacado.
    * @param {string} msg
    * @param {{duration?: number}} [opts] duración total de la animación (ms)
    */
@@ -12260,14 +12289,34 @@ a { color: var(--ember); }
     el.className = 'center-msg';
     el.setAttribute('role', 'status');
     el.setAttribute('aria-live', 'polite');
+    el.setAttribute('aria-atomic', 'true');
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'center-msg-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+
+    var panel = document.createElement('div');
+    panel.className = 'center-msg-panel';
     var span = document.createElement('span');
     span.textContent = String(msg);
-    el.appendChild(span);
+    panel.appendChild(span);
+
+    el.appendChild(backdrop);
+    el.appendChild(panel);
+
+    /* Bloquea clics al UI de debajo sin cerrar ni disparar acciones. */
+    ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'contextmenu'].forEach(function (ev) {
+      el.addEventListener(ev, swallow, true);
+    });
+
     document.body.appendChild(el);
     current = el;
 
     var life = typeof opts.duration === 'number' ? opts.duration : LIFE_MS;
-    if (life !== LIFE_MS) span.style.animationDuration = life + 'ms';
+    if (life !== LIFE_MS) {
+      backdrop.style.animationDuration = life + 'ms';
+      panel.style.animationDuration = life + 'ms';
+    }
 
     timer = setTimeout(function () {
       if (current === el) dismiss();
