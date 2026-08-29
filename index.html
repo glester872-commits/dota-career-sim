@@ -9783,6 +9783,9 @@ a { color: var(--ember); }
   /** Resuelve una decisión pendiente aplicando la opción elegida UNA vez. */
   function resolve(state, rng, inst, optionIndex, season) {
     if (inst.applied || inst.resolved && inst.outcome) {
+      if (inst.outcomeKey && DCS.t) {
+        return DCS.t(inst.outcomeKey, inst.vars || {}, inst.outcome || '');
+      }
       return inst.outcome || (DCS.t ? DCS.t('game.alreadyResolved', null, 'Ya estaba resuelto.') : 'Ya estaba resuelto.');
     }
     var def = null;
