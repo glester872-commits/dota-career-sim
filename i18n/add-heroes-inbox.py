@@ -15,7 +15,7 @@ I18N_ES = {
     "nav": {"inbox": "Bandeja"},
     "heroes": {
         "topThree": "Mejores tres héroes",
-        "topThreeSub": "Según tus partidas oficiales: victorias primero, luego porcentaje.",
+        "topThreeSub": "Según tus partidas oficiales.",
         "empty": "Todavía no hay suficientes partidas para destacar héroes.",
         "maps": "Partidas",
         "wins": "Victorias",
@@ -88,7 +88,7 @@ I18N_EN = {
     "nav": {"inbox": "Inbox"},
     "heroes": {
         "topThree": "Top three heroes",
-        "topThreeSub": "Based on your official matches: wins first, then win rate.",
+        "topThreeSub": "Based on your official matches.",
         "empty": "Not enough matches yet to highlight heroes.",
         "maps": "Matches",
         "wins": "Wins",
