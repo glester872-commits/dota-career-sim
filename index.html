@@ -1133,6 +1133,15 @@ a { color: var(--ember); }
   color: #fff; text-shadow: 0 0 40px rgba(255, 194, 71, .6);
 }
 .celebrate .c-sub { color: var(--text-2); margin-top: 8px; font-size: 14px; }
+.celebrate .c-logo {
+  width: clamp(120px, 22vw, 220px); height: clamp(120px, 22vw, 220px);
+  object-fit: contain; margin: 0 auto 18px; display: block;
+  filter: drop-shadow(0 0 40px rgba(255, 194, 71, .55));
+}
+.celebrate .c-winner {
+  font-size: clamp(30px, 7vw, 60px); font-weight: 900; letter-spacing: .12em;
+  color: var(--gold); text-shadow: 0 0 40px rgba(255, 194, 71, .7); margin-top: 10px;
+}
 @keyframes celebFade { 0% { opacity: 0 } 12% { opacity: 1 } 78% { opacity: 1 } 100% { opacity: 0 } }
 @keyframes celebPop { from { transform: scale(.86); opacity: 0 } to { transform: none; opacity: 1 } }
 
@@ -2657,6 +2666,18 @@ a { color: var(--ember); }
   pointer-events: none;
   animation: centerMsgPanel 1.85s cubic-bezier(.22, .82, .28, 1) both;
 }
+.center-msg-panel.tone-good {
+  border: 2px solid var(--teal);
+  background: linear-gradient(180deg, rgba(31,217,176,.3), rgba(31,217,176,.1) 60%), linear-gradient(180deg, var(--panel), var(--panel-2));
+  box-shadow: var(--shadow-s), 0 0 0 1px rgba(0,0,0,.25), 0 0 28px rgba(31,217,176,.35);
+}
+.center-msg-panel.tone-bad {
+  border: 2px solid var(--red);
+  background: linear-gradient(180deg, rgba(255,90,117,.3), rgba(255,90,117,.1) 60%), linear-gradient(180deg, var(--panel), var(--panel-2));
+  box-shadow: var(--shadow-s), 0 0 0 1px rgba(0,0,0,.25), 0 0 28px rgba(255,90,117,.35);
+}
+.center-msg-panel.tone-good > span::before { content: "✓  "; color: var(--teal); font-weight: 800; }
+.center-msg-panel.tone-bad > span::before { content: "✕  "; color: var(--red); font-weight: 800; }
 .center-msg-panel > span {
   display: block;
   font-family: var(--sans);
@@ -9504,7 +9525,6 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
     });
     spawned.forEach(function (o) {
       state.offers.push(o);
-      if (DCS.engine.inbox && DCS.engine.inbox.pushOffer) DCS.engine.inbox.pushOffer(state, o);
     });
 
     /* Red de seguridad: tras muchas esperas, al menos una puerta inferior. */
@@ -11815,9 +11835,6 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
       : [];
 
     state.offers = offers;
-    if (DCS.engine.inbox && offers) {
-      offers.forEach(function (o) { DCS.engine.inbox.pushOffer(state, o); });
-    }
     state.season.phase = 'yearEnd';
 
     return {
@@ -12016,18 +12033,15 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
     if (!state || !state.career) return null;
     var cur = state.career.preseasonSpecial;
     if (cur && cur.year === state.year) {
-      /* Misma temporada: no regenerar. Solo asegura el mensaje si sigue pendiente. */
-      if (!cur.resolved && cur.status === 'pending' &&
-          DCS.engine.inbox && DCS.engine.inbox.pushPreseasonSpecial) {
-        DCS.engine.inbox.pushPreseasonSpecial(state);
+      /* Misma temporada: no regenerar. Si sigue pendiente, bloquea con el modal. */
+      if (!cur.resolved && cur.status === 'pending' && !state.pending) {
+        state.pending = { type: 'preseasonSpecial' };
       }
       return cur;
     }
     /* Nueva temporada: sustituye el bag (sin acumular intentos previos). */
     state.career.preseasonSpecial = fresh(state.year, rng.int(0, 2));
-    if (DCS.engine.inbox && DCS.engine.inbox.pushPreseasonSpecial) {
-      DCS.engine.inbox.pushPreseasonSpecial(state);
-    }
+    if (!state.pending) state.pending = { type: 'preseasonSpecial' };
     return state.career.preseasonSpecial;
   }
 
@@ -12211,9 +12225,6 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
     if (DCS.engine.market.ensureFaMarket) DCS.engine.market.ensureFaMarket(state);
     if (DCS.engine.market.generateInitialOffers) {
       DCS.engine.market.generateInitialOffers(state, rng);
-    }
-    if (DCS.engine.inbox && state.offers) {
-      state.offers.forEach(function (o) { DCS.engine.inbox.pushOffer(state, o); });
     }
     DCS.engine.season.startSeason(state);
 
@@ -13197,14 +13208,27 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
     if (reduced) return;
     var el = document.createElement('div');
     el.className = 'celebrate';
-    el.innerHTML = '<div class="c-inner">' +
-      '<div class="c-kicker">' + DCS.ui.c.esc(o.kicker || '') + '</div>' +
-      '<div class="c-title">' + DCS.ui.c.esc(o.title || '') + '</div>' +
-      (o.sub ? '<div class="c-sub">' + DCS.ui.c.esc(o.sub) + '</div>' : '') +
-      '</div>';
+    if (o.logo) {
+      el.innerHTML = '<div class="c-inner">' +
+        '<img class="c-logo" src="' + DCS.ui.c.esc(o.logo) + '" alt="">' +
+        '<div class="c-winner">WINNER</div>' +
+        '<div class="c-title">' + DCS.ui.c.esc(o.title || '') + '</div>' +
+        (o.sub ? '<div class="c-sub">' + DCS.ui.c.esc(o.sub) + '</div>' : '') +
+        '</div>';
+    } else {
+      el.innerHTML = '<div class="c-inner">' +
+        '<div class="c-kicker">' + DCS.ui.c.esc(o.kicker || '') + '</div>' +
+        '<div class="c-title">' + DCS.ui.c.esc(o.title || '') + '</div>' +
+        (o.sub ? '<div class="c-sub">' + DCS.ui.c.esc(o.sub) + '</div>' : '') +
+        '</div>';
+    }
     document.body.appendChild(el);
     setTimeout(function () { if (el.parentNode) el.remove(); }, 2700);
   }
+
+  /* Torneos con logo propio incrustado: al ganarlos, la celebración
+     muestra el logo grande + "WINNER" en vez del texto normal. */
+  var BIG_LOGO_TOURNAMENTS = ['ti', 'dreamleague', 'esl_one', 'pgl_wallachia', 'blast_slam'];
 
   /**
    * Decide si un informe de competición merece celebración.
@@ -13218,6 +13242,15 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
       if (!best || t.prestige > best.prestige) best = t;
     });
     if (!best) return;
+    var key = best.key || best.series;
+    if (BIG_LOGO_TOURNAMENTS.indexOf(key) !== -1) {
+      var tpl = DCS.data.TOURNAMENT_TEMPLATES && DCS.data.TOURNAMENT_TEMPLATES[key];
+      var logo = tpl && tpl.logo;
+      if (logo) {
+        celebrate({ logo: logo, title: best.name, sub: best.teamName });
+        return;
+      }
+    }
     if (best.kind === 'ti') {
       celebrate({ kicker: 'Campeones del mundo', title: best.name, sub: best.teamName + ' levanta el Aegis' });
     } else if (best.prestige >= 8) {
@@ -13302,7 +13335,7 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
       backdrop.setAttribute('aria-hidden', 'true');
 
       var panel = document.createElement('div');
-      panel.className = 'center-msg-panel';
+      panel.className = 'center-msg-panel' + (opts.tone === 'good' ? ' tone-good' : opts.tone === 'bad' ? ' tone-bad' : '');
       var span = document.createElement('span');
       span.textContent = String(msg);
       panel.appendChild(span);
@@ -15205,8 +15238,7 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
 
     if (tab === 'stats') {
       if (!state.career.acc || !state.career.acc.maps) {
-        return head + c.card({ title: t('ui.noData', null, 'Sin datos'), body: c.empty(t('profile.noOfficialMaps')) }) +
-          S.topHeroesCard(state);
+        return head + c.card({ title: t('ui.noData', null, 'Sin datos'), body: c.empty(t('profile.noOfficialMaps')) });
       }
       return head +
         c.card({
@@ -15695,7 +15727,6 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
     var filters = [
       { id: 'all', label: t('inbox.all') },
       { id: 'unread', label: t('inbox.unread') },
-      { id: 'offers', label: t('inbox.offers') },
       { id: 'tournaments', label: t('inbox.tournaments') },
       { id: 'team', label: t('inbox.team') },
       { id: 'system', label: t('inbox.system') }
@@ -16331,6 +16362,21 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
           '<button class="choice" data-action="wealth-no"><b>' + t('common.reject') + '</b>' +
           '<span>' + t('modal.rejectHint') + '</span></button>' +
           '</div></div></div></div>';
+      } else if (pend.type === 'preseasonSpecial') {
+        var ps = DCS.engine.preseasonSpecial && DCS.engine.preseasonSpecial.bagOf(state);
+        if (!ps) { state.pending = null; return; }
+        var psv = ps.variant || 0;
+        var psvs = psv === 0 ? '' : String(psv);
+        html = '<div class="modal-bg"><div class="modal">' +
+          '<div class="modal-head"><div class="modal-kicker">' + t('modal.decision') + '</div><h3>' +
+          c.esc(t('preseasonSpecial.subject' + psvs)) + '</h3></div>' +
+          '<div class="modal-body"><p>' + c.esc(t('preseasonSpecial.body' + psvs)) + '</p>' +
+          '<div class="choices">' +
+          '<button class="choice" data-action="preseason-choice" data-value="accept">' +
+          '<b>' + c.esc(t('preseasonSpecial.accept' + psvs)) + '</b></button>' +
+          '<button class="choice" data-action="preseason-choice" data-value="reject">' +
+          '<b>' + c.esc(t('preseasonSpecial.reject' + psvs)) + '</b></button>' +
+          '</div></div></div></div>';
       }
       if (html) app.root.insertAdjacentHTML('beforeend', html);
     },
@@ -16630,13 +16676,6 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
             return;
           }
           if (r && r.legacy) { app.go('legacy'); return; }
-          if (r && r.type === 'preseason' && r.preseasonSpecial && r.preseasonSpecial.status === 'pending') {
-            if (DCS.ui && DCS.ui.centerMsg) {
-              DCS.ui.centerMsg(DCS.t('preseasonSpecial.centerOffer'), { bare: false });
-            } else if (DCS.centerMsg) {
-              DCS.centerMsg(DCS.t('preseasonSpecial.centerOffer'));
-            }
-          }
           app.openTourn = null;
           if (app.view !== 'dashboard' && !(DCS.game.state.offers || []).length) app.view = 'dashboard';
           if (before === 'market' && DCS.game.state.offers.length) app.view = 'offers';
@@ -16771,6 +16810,20 @@ DCS.assetsInline['tour-dreamleague'] = 'data:image/png;base64,iVBORw0KGgoAAAANSU
         case 'wealth-no': {
           var no = DCS.game.resolveWealth(false);
           app.toast(no.text || DCS.t('game.keepCash', null, 'Conservas la liquidez.'));
+          app.render();
+          return;
+        }
+
+        case 'preseason-choice': {
+          var psState = DCS.game.state;
+          var psRes = DCS.engine.preseasonSpecial && DCS.engine.preseasonSpecial.resolve(psState, value);
+          psState.pending = null;
+          if (psRes && psRes.ok) {
+            var psMsg = DCS.t(psRes.outcomeKey, null, DCS.t('inbox.actionDone'));
+            var psTone = psRes.result === 'favorable' ? 'good' : (psRes.result === 'unfavorable' ? 'bad' : null);
+            app.toast(psMsg, { tone: psTone });
+          }
+          DCS.game.persist();
           app.render();
           return;
         }
