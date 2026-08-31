@@ -681,6 +681,7 @@ a { color: var(--ember); }
 .hud-item:first-child { border-left: 0; }
 .hud-k { font-size: 9.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--text-3); }
 .hud-v { font-family: var(--mono); font-size: 14px; font-weight: 700; line-height: 1.2; }
+.hud-cal { color: var(--text-3); font-weight: 500; font-size: 11px; }
 
 .shell { flex: 1; display: flex; align-items: flex-start; }
 
@@ -2948,6 +2949,13 @@ a { color: var(--ember); }
 .match-result .mr-chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line-soft);color:var(--text-2)}
 .match-result .mr-chip.good{color:#adf5e3;border-color:rgba(31,217,176,.3)}
 .match-result .mr-chip.bad{color:#ffc4cf;border-color:rgba(255,90,117,.3)}
+.match-result .mr-mmr{margin-top:12px;text-align:center}
+.match-result .mr-mmr-line{font-size:16px;font-weight:720;letter-spacing:-.02em}
+.match-result .mr-mmr-delta.good{color:#adf5e3}
+.match-result .mr-mmr-delta.bad{color:#ffc4cf}
+.match-result .mr-mmr-note{font-size:12.5px;color:var(--text-3);margin-top:4px}
+.match-result .mr-mmr-maps{font-size:11.5px;color:var(--text-3);margin-top:3px;font-family:var(--mono)}
+.match-result .mr-mmr-calib,.match-result .mr-mmr-rank{font-size:12px;color:var(--text-3);margin-top:3px}
 .match-result .mr-next{margin-top:10px;font-size:13px;color:var(--text-2)}
 @media (max-width: 640px) {
   .match-result .mr-verdict{font-size:24px}
@@ -6498,8 +6506,11 @@ a { color: var(--ember); }
 
     player.overall = overall(player);
     player.peakOverall = player.overall;
-    player.mmr = Math.round(targetMmr(player, rng) * 0.92);
+    /* MMR provisional: la calibración de mapas oficiales lo asienta. */
+    player.mmr = Math.round(targetMmr(player, rng) * 0.88);
     player.peakMmr = player.mmr;
+    player.mmrCalibLeft = MMR_CALIB_MAPS;
+    player.mmrCalibrating = true;
     return player;
   }
 
@@ -6558,6 +6569,188 @@ a { color: var(--ember); }
     return 'Talento excepcional';
   }
 
+  var MMR_MIN = 1;
+  var MMR_MAX = 16000;
+  var MMR_CALIB_MAPS = 10;
+  var MMR_RANKS = [
+    { id: 'herald', min: 0 },
+    { id: 'guardian', min: 770 },
+    { id: 'crusader', min: 1540 },
+    { id: 'archon', min: 2310 },
+    { id: 'legend', min: 3080 },
+    { id: 'ancient', min: 3850 },
+    { id: 'divine', min: 4620 },
+    { id: 'immortal', min: 5420 }
+  ];
+
+  function ensureMmr(state) {
+    if (!state || !state.player) return;
+    var p = state.player;
+    if (!state.career) state.career = {};
+    if (!state.career.mmrSeen) state.career.mmrSeen = {};
+    if (!Array.isArray(state.career.mmrLog)) state.career.mmrLog = [];
+    if (typeof p.mmr !== 'number' || isNaN(p.mmr)) p.mmr = 2000;
+    if (typeof p.peakMmr !== 'number') p.peakMmr = p.mmr;
+    if (typeof p.mmrCalibLeft !== 'number') {
+      p.mmrCalibLeft = 0;
+      p.mmrCalibrating = false;
+    }
+  }
+
+  function rankOf(mmr) {
+    var r = MMR_RANKS[0];
+    for (var i = 0; i < MMR_RANKS.length; i++) {
+      if (mmr >= MMR_RANKS[i].min) r = MMR_RANKS[i];
+    }
+    return r;
+  }
+
+  function nextRankOf(mmr) {
+    var r = rankOf(mmr);
+    for (var i = 0; i < MMR_RANKS.length; i++) {
+      if (MMR_RANKS[i].id === r.id) return MMR_RANKS[i + 1] || null;
+    }
+    return null;
+  }
+
+  function rankProgress(mmr) {
+    var r = rankOf(mmr);
+    var n = nextRankOf(mmr);
+    if (!n) return { rank: r, next: null, pct: 1, remain: 0 };
+    var span = n.min - r.min;
+    return {
+      rank: r,
+      next: n,
+      pct: span ? U.clamp((mmr - r.min) / span, 0, 1) : 1,
+      remain: Math.max(0, n.min - mmr)
+    };
+  }
+
+  function expectedWinProb(teamLevel, oppLevel) {
+    return U.clamp(U.logistic((teamLevel || 50) - (oppLevel || 50), 18), 0.08, 0.92);
+  }
+
+  function rivalBand(pWin) {
+    if (pWin >= 0.62) return 'favorite';
+    if (pWin <= 0.38) return 'underdog';
+    return 'even';
+  }
+
+  function baseDelta(won, pWin, calib) {
+    var tilt = U.clamp((pWin - 0.5) * 2, -1, 1);
+    var mag = won ? (25 - tilt * 6) : (25 + tilt * 6);
+    mag = U.clamp(mag, 20, calib ? 37 : 32);
+    return won ? mag : -mag;
+  }
+
+  function perfAdj(roleId, line) {
+    var role = DCS.data.ROLES[roleId];
+    if (!role || !role.ratingSpec || !line) return 0;
+    var kda = ((line.kills || 0) + (line.assists || 0)) / Math.max(1, line.deaths || 0);
+    var score = 0, wsum = 0;
+    for (var i = 0; i < role.ratingSpec.length; i++) {
+      var s = role.ratingSpec[i];
+      var v = s.key === 'kda' ? kda : line[s.key];
+      if (v === undefined || v === null) continue;
+      score += s.w * U.norm(v, s.low, s.high);
+      wsum += s.w;
+    }
+    if (!wsum) return 0;
+    return Math.round(U.clamp((score / wsum - 0.5) * 12, -3, 3));
+  }
+
+  function resultKey(won, rival) {
+    if (won) {
+      if (rival === 'underdog') return 'mmr.winUpset';
+      if (rival === 'favorite') return 'mmr.winExpected';
+      return 'mmr.winEven';
+    }
+    if (rival === 'favorite') return 'mmr.lossUpset';
+    if (rival === 'underdog') return 'mmr.lossExpected';
+    return 'mmr.lossEven';
+  }
+
+  function rivalKey(rival) {
+    if (rival === 'favorite') return 'mmr.rivalFav';
+    if (rival === 'underdog') return 'mmr.rivalDog';
+    return 'mmr.rivalEven';
+  }
+
+  /**
+   * Aplica el MMR de un mapa oficial exactamente una vez.
+   * Victoria siempre +, derrota siempre −. El rendimiento no invierte el signo.
+   */
+  function applyMapMmr(state, opts) {
+    opts = opts || {};
+    ensureMmr(state);
+    var id = opts.id;
+    if (!id) return null;
+    var seen = state.career.mmrSeen[id];
+    if (seen) {
+      var skip = {};
+      for (var sk in seen) if (Object.prototype.hasOwnProperty.call(seen, sk)) skip[sk] = seen[sk];
+      skip.skipped = true;
+      return skip;
+    }
+
+    var p = state.player;
+    var won = !!opts.won;
+    var pWin = typeof opts.pWin === 'number'
+      ? U.clamp(opts.pWin, 0.08, 0.92)
+      : expectedWinProb(opts.teamLevel, opts.oppLevel);
+    var calib = p.mmrCalibLeft > 0;
+    var cap = calib ? 40 : 35;
+    var rival = rivalBand(pWin);
+    var delta = baseDelta(won, pWin, calib);
+    var perf = perfAdj(p.role, opts.line);
+    delta += perf;
+    delta = Math.round(delta);
+    if (won) delta = U.clamp(delta, 1, cap);
+    else delta = U.clamp(delta, -cap, -1);
+
+    var before = p.mmr;
+    p.mmr = Math.round(U.clamp(before + delta, MMR_MIN, MMR_MAX));
+    if (p.mmr > p.peakMmr) p.peakMmr = p.mmr;
+    if (calib) {
+      p.mmrCalibLeft = Math.max(0, p.mmrCalibLeft - 1);
+      if (p.mmrCalibLeft === 0) p.mmrCalibrating = false;
+    }
+
+    var rec = {
+      id: id,
+      before: before,
+      delta: delta,
+      after: p.mmr,
+      won: won,
+      pWin: Math.round(pWin * 1000) / 1000,
+      perf: perf,
+      calib: calib,
+      rival: rival,
+      resultKey: resultKey(won, rival),
+      rivalKey: rivalKey(rival),
+      applied: true
+    };
+    state.career.mmrSeen[id] = rec;
+    state.career.mmrLog.push(rec);
+    if (state.career.mmrLog.length > 120) state.career.mmrLog = state.career.mmrLog.slice(-80);
+    if (state.season) {
+      state.season.mmrDelta = (state.season.mmrDelta || 0) + delta;
+      state.season.mmrMaps = (state.season.mmrMaps || 0) + 1;
+    }
+    return rec;
+  }
+
+  function mapId(state, live, seriesIdx, mapIdx, oppKey) {
+    return [
+      state.year,
+      (live && live.templateId) || '',
+      (live && live.name) || '',
+      oppKey || '',
+      seriesIdx,
+      mapIdx
+    ].join('|');
+  }
+
   DCS.engine = DCS.engine || {};
   DCS.engine.player = {
     createPlayer: createPlayer,
@@ -6566,7 +6759,18 @@ a { color: var(--ember); }
     targetMmr: targetMmr,
     effectiveLevel: effectiveLevel,
     perceivedPotential: perceivedPotential,
-    scoutingOpinion: scoutingOpinion
+    scoutingOpinion: scoutingOpinion,
+    ensureMmr: ensureMmr,
+    applyMapMmr: applyMapMmr,
+    expectedWinProb: expectedWinProb,
+    rivalBand: rivalBand,
+    baseDelta: baseDelta,
+    perfAdj: perfAdj,
+    rankOf: rankOf,
+    rankProgress: rankProgress,
+    mapId: mapId,
+    MMR_RANKS: MMR_RANKS,
+    MMR_CALIB_MAPS: MMR_CALIB_MAPS
   };
 })(window.DCS = window.DCS || {});
 
@@ -7509,11 +7713,7 @@ a { color: var(--ember); }
     p.overall = DCS.engine.player.overall(p);
     if (p.overall > p.peakOverall) p.peakOverall = p.overall;
 
-    /* MMR: se mueve hacia su objetivo, no salta */
-    var target = DCS.engine.player.targetMmr(p, rng);
-    var pull = ctx.played ? 0.5 : 0.62;                      /* sin equipo se grindea más */
-    p.mmr = Math.round(U.clamp(p.mmr + (target - p.mmr) * pull + rng.gauss(0, 120), 500, 16000));
-    if (p.mmr > p.peakMmr) p.peakMmr = p.mmr;
+    /* El MMR solo se mueve con mapas oficiales (applyMapMmr). */
 
     p.experience = U.clamp(p.experience + (ctx.mapsPlayed || 0) * 0.09 + (ctx.played ? 2 : 0.4), 0, 200);
 
@@ -7793,16 +7993,26 @@ a { color: var(--ember); }
       team: team, teamLevel: live.teamLevel, oppLevel: oppLevel, format: format,
       prestige: (tpl && tpl.prestige) || live.prestige || null
     });
+    var ref = opponent && typeof opponent === 'object' ? opponent : oppRef(live, oppIndex || 0);
+    var oppKey = (ref && (ref.id || ref.name)) || String(oppIndex || 0);
     r.maps.forEach(function (m, mi) {
       if (DCS.engine.heroes && DCS.engine.heroes.pickForMap) {
         m.heroId = DCS.engine.heroes.pickForMap(state, rng, state.player && state.player.role);
         DCS.engine.heroes.record(state, m.heroId, m.win);
       }
       DCS.engine.stats.add(live.acc, m.line, m.win);
+      if (DCS.engine.player && DCS.engine.player.applyMapMmr) {
+        m.mmr = DCS.engine.player.applyMapMmr(state, {
+          id: DCS.engine.player.mapId(state, live, live.log.length, mi, oppKey),
+          won: m.win,
+          teamLevel: live.teamLevel,
+          oppLevel: oppLevel,
+          line: m.line
+        });
+      }
     });
     live.seriesPlayed++;
     if (r.won === true) live.seriesWon++; else if (r.won === false) live.seriesLost++;
-    var ref = opponent && typeof opponent === 'object' ? opponent : oppRef(live, oppIndex || 0);
     var entry = {
       stage: stage,
       opp: ref,
@@ -7858,10 +8068,36 @@ a { color: var(--ember); }
       disappointing: !!bad,
       deltas: delta,
       maps: r.maps.map(function (m) {
-        return { win: m.win, line: m.line, heroId: m.heroId || null };
+        return { win: m.win, line: m.line, heroId: m.heroId || null, mmr: m.mmr || null };
       })
     };
     live.last.resultType = getMatchResultType(live.last);
+    if (r.maps && r.maps.length && r.maps[0].mmr) {
+      var mmrMaps = r.maps.map(function (m) { return m.mmr; }).filter(Boolean);
+      var mmrDelta = 0;
+      mmrMaps.forEach(function (x) { mmrDelta += x.delta; });
+      live.last.mmr = {
+        before: mmrMaps[0].before,
+        after: state.player.mmr,
+        delta: mmrDelta,
+        maps: mmrMaps,
+        calib: !!(state.player.mmrCalibrating || state.player.mmrCalibLeft > 0),
+        calibLeft: state.player.mmrCalibLeft,
+        rank: DCS.engine.player.rankProgress ? DCS.engine.player.rankProgress(state.player.mmr) : null,
+        resultKey: (function () {
+          var want = r.won === true;
+          for (var i = mmrMaps.length - 1; i >= 0; i--) {
+            if (mmrMaps[i].won === want) return mmrMaps[i].resultKey;
+          }
+          return mmrMaps[mmrMaps.length - 1].resultKey;
+        })(),
+        rivalKey: mmrMaps[0].rivalKey,
+        perf: 0
+      };
+      var perfSum = 0;
+      mmrMaps.forEach(function (x) { perfSum += x.perf; });
+      live.last.mmr.perf = Math.round(perfSum / mmrMaps.length);
+    }
     return r;
   }
 
@@ -11114,7 +11350,10 @@ a { color: var(--ember); }
       report: null,
       titles: 0,
       role: p.role,
-      flags: { upsetWin: false, badLoss: false }
+      flags: { upsetWin: false, badLoss: false },
+      mmrStart: p.mmr,
+      mmrDelta: 0,
+      mmrMaps: 0
     };
     if (team) openStint(state, team);
     return state.season;
@@ -11545,12 +11784,9 @@ a { color: var(--ember); }
       var report = { type: 'competition', title: 'Temporada ' + state.year,
       titleKey: 'report.competitionTitle',
       titleVars: { year: state.year }, tournaments: [], lines: [], ti: null };
-      var gain = rng.int(120, 620);
-      p.mmr = Math.round(U.clamp(p.mmr + gain, 500, 16000));
-      if (p.mmr > p.peakMmr) p.peakMmr = p.mmr;
       p.form = U.clamp(p.form + rng.int(-6, 8), 0, 100);
       report.lines.push({ key: 'report.noOfficial', vars: { mmr: DCS.ui.fmt.mmr(p.mmr) },
-        text: 'Sin competición oficial. Cierras el año con ' + DCS.ui.fmt.mmr(p.mmr) + ' de MMR.' });
+        text: 'Sin competición oficial. El MMR se mantiene en ' + DCS.ui.fmt.mmr(p.mmr) + '.' });
       if (rng.chance(0.35)) report.lines.push({ key: 'report.scrimTryouts',
         text: 'Un par de equipos te han probado en scrims. Nada firmado.' });
       state.season.phase = 'review';
@@ -11742,7 +11978,10 @@ a { color: var(--ember); }
         salary: s.earnings.salary, prize: s.earnings.prize,
         other: s.earnings.other, bonus: s.earnings.bonus || 0
       },
+      mmrStart: s.mmrStart != null ? s.mmrStart : p.mmr,
       mmrEnd: p.mmr,
+      mmrDelta: s.mmrDelta != null ? s.mmrDelta : (p.mmr - (s.mmrStart != null ? s.mmrStart : p.mmr)),
+      mmrMaps: s.mmrMaps || 0,
       overallEnd: p.overall,
       reputationEnd: Math.round(p.reputation),
       events: s.events.map(function (e) {
@@ -12104,7 +12343,7 @@ a { color: var(--ember); }
   'use strict';
 
   var KEY = 'dcs.career.v1';
-  var VERSION = 6;
+  var VERSION = 7;
 
   var available = (function () {
     try {
@@ -12152,7 +12391,9 @@ a { color: var(--ember); }
         peakReputation: 0,
         lastChangeYear: null,
         lastRetirementPrompt: null,
-        highlights: []
+        highlights: [],
+        mmrSeen: {},
+        mmrLog: []
       }
     };
 
@@ -12358,6 +12599,7 @@ a { color: var(--ember); }
       }
     }
     if (state.player) {
+      if (DCS.engine.player && DCS.engine.player.ensureMmr) DCS.engine.player.ensureMmr(state);
       if (typeof state.player.seasonsWithoutTeam !== 'number') state.player.seasonsWithoutTeam = 0;
       if (!state.player.homeRegion) state.player.homeRegion = state.player.region;
       if (state.career && !state.career.startingRegion) {
@@ -14433,7 +14675,9 @@ a { color: var(--ember); }
       '<div class="row" style="margin-bottom:10px">' + c.badge(tResult(rec.bestResult), rec.titles ? 'gold' : 'muted') + '</div>' +
       '<div class="kv"><span>' + t('ui.reputation') + '</span><span>' + Math.round(p.reputation) + ' (' + fmt.signed(r.repDelta) + ')</span></div>' +
       '<div class="kv"><span>' + t('ui.valuation') + '</span><span>' + p.overall + ' (' + fmt.signed(p.overall - r.dev.overallBefore) + ')</span></div>' +
-      '<div class="kv"><span>MMR</span><span>' + fmt.mmr(p.mmr) + '</span></div>' +
+      '<div class="kv"><span>MMR</span><span>' +
+        fmt.mmr(rec.mmrStart != null ? rec.mmrStart : p.mmr) + ' → ' + fmt.mmr(p.mmr) +
+        ' (' + fmt.signed(rec.mmrDelta || 0) + ')</span></div>' +
       '<div class="kv"><span>Salario</span><span>' + fmt.money(rec.earnings.salary) + '</span></div>' +
       '<div class="kv"><span>Premios</span><span class="gold">' + fmt.money(rec.earnings.prize) + '</span></div>' +
       (rec.earnings.bonus ? '<div class="kv"><span>' + t('report.contractBonus') + '</span><span class="good">' +
@@ -14847,6 +15091,61 @@ a { color: var(--ember); }
         nextLine = '<p class="mr-next">Siguiente: <b>' + c.esc(next.stage) + '</b>' +
           (next.opp ? ' · vs ' + c.esc(next.opp.name) : '') + '</p>';
       }
+      var mmrHtml = '';
+      if (last.mmr) {
+        var mm = last.mmr;
+        var dStr = (mm.delta > 0 ? '+' : '') + mm.delta;
+        var resultFb = {
+          'mmr.winUpset': 'Victoria inesperada',
+          'mmr.winExpected': 'Victoria esperada',
+          'mmr.winEven': 'Victoria equilibrada',
+          'mmr.lossUpset': 'Derrota inesperada',
+          'mmr.lossExpected': 'Derrota esperada',
+          'mmr.lossEven': 'Derrota equilibrada'
+        };
+        var rivalFb = {
+          'mmr.rivalFav': 'rival inferior',
+          'mmr.rivalEven': 'rival parejo',
+          'mmr.rivalDog': 'rival superior'
+        };
+        var note = t(mm.resultKey, null, resultFb[mm.resultKey] || '') + ' · ' +
+          t(mm.rivalKey, null, rivalFb[mm.rivalKey] || '');
+        var perfLabel = mm.perf
+          ? t('mmr.perfAdj', { n: (mm.perf > 0 ? '+' : '') + mm.perf }, 'rendimiento ' + (mm.perf > 0 ? '+' : '') + mm.perf)
+          : t('mmr.perfEven', null, 'rendimiento neutro');
+        note = note + ' · ' + perfLabel;
+        var calibLine = '';
+        if (state.player.mmrCalibLeft > 0 || mm.calib) {
+          var doneN = (DCS.engine.player.MMR_CALIB_MAPS || 10) - (state.player.mmrCalibLeft || 0);
+          calibLine = '<div class="mr-mmr-calib">' +
+            t('mmr.calib', { n: doneN, total: DCS.engine.player.MMR_CALIB_MAPS || 10 },
+              'Calibración ' + doneN + '/' + (DCS.engine.player.MMR_CALIB_MAPS || 10)) + '</div>';
+        }
+        var rankLine = '';
+        if (mm.rank && mm.rank.rank) {
+          var rn = t('mmr.rank.' + mm.rank.rank.id, null, mm.rank.rank.id);
+          if (mm.rank.next) {
+            var nn = t('mmr.rank.' + mm.rank.next.id, null, mm.rank.next.id);
+            rankLine = '<div class="mr-mmr-rank">' + c.esc(rn) + ' · ' +
+              t('mmr.toNext', { rank: nn, n: mm.rank.remain }, mm.rank.remain + ' hasta ' + nn) + '</div>';
+          } else {
+            rankLine = '<div class="mr-mmr-rank">' + c.esc(rn) + '</div>';
+          }
+        }
+        var mapsLine = '';
+        if (mm.maps && mm.maps.length > 1) {
+          mapsLine = '<div class="mr-mmr-maps">' + mm.maps.map(function (x) {
+            return (x.delta > 0 ? '+' : '') + x.delta;
+          }).join(' · ') + '</div>';
+        }
+        mmrHtml = '<div class="mr-mmr">' +
+          '<div class="mr-mmr-line">' + fmt.mmr(mm.before) +
+          ' <span class="mr-mmr-delta ' + (mm.delta >= 0 ? 'good' : 'bad') + '">' + dStr + '</span> → ' +
+          fmt.mmr(mm.after) + '</div>' +
+          mapsLine +
+          '<div class="mr-mmr-note">' + c.esc(note) + '</div>' +
+          calibLine + rankLine + '</div>';
+      }
       resultBlock = '<div class="match-result ' + toneCls + '">' +
         '<div class="mr-eyebrow">' + t('ui.result', null, 'Resultado') + '</div>' +
         '<div class="mr-verdict">' + verdict + '</div>' +
@@ -14859,7 +15158,7 @@ a { color: var(--ember); }
         '<div class="mr-meta">' + c.esc(live.name) + (last.stage ? ' · ' + c.esc(tStage(last.stage)) : '') + '</div>' +
         (cons ? '<div class="mr-consequence">' + c.esc(cons.label) + '</div>' : '') +
         (cons && cons.detail ? '<p class="mr-detail">' + c.esc(tResult(cons.detail) || cons.detail) + '</p>' : '') +
-        deltasHtml + nextLine + '</div>';
+        deltasHtml + mmrHtml + nextLine + '</div>';
     } else if (eliminatedGroups) {
       resultBlock = '<div class="elim-banner">' +
         '<div class="elim-title">' + t('tour.eliminated') + '</div>' +
@@ -15889,7 +16188,7 @@ a { color: var(--ember); }
       c.tile(t('ui.winrate', null, 'Winrate'), fmt.pct(avg.winrate)),
       c.tile('Series', h.seriesPlayed, h.seriesWon + '-' + h.seriesLost),
       c.tile('Rating', h.rating === null ? '—' : h.rating),
-      c.tile('MMR final', fmt.mmr(h.mmrEnd)),
+      c.tile('MMR final', fmt.mmr(h.mmrEnd), h.mmrDelta != null ? fmt.signed(h.mmrDelta) : null),
       c.tile('Salario', fmt.money(h.earnings.salary)),
       c.tile(t('market.prizes'), fmt.money(h.earnings.prize), null, 'gold')
     ]);
@@ -16179,7 +16478,15 @@ a { color: var(--ember); }
       var hud = '<div class="hud">' +
         '<div class="hud-item"><span class="hud-k">' + t('hud.age') + '</span><span class="hud-v">' + p.age + '</span></div>' +
         '<div class="hud-item"><span class="hud-k">' + t('hud.overall') + '</span><span class="hud-v" style="color:var(--gold)">' + p.overall + '</span></div>' +
-        '<div class="hud-item"><span class="hud-k">' + t('hud.mmr') + '</span><span class="hud-v">' + fmt.mmr(p.mmr) + '</span></div>' +
+        '<div class="hud-item"><span class="hud-k">' + t('hud.mmr') + '</span><span class="hud-v">' +
+          fmt.mmr(p.mmr) +
+          (p.mmrCalibLeft > 0
+            ? '<span class="hud-cal"> · ' + t('mmr.calibShort', {
+                n: (DCS.engine.player.MMR_CALIB_MAPS || 10) - p.mmrCalibLeft,
+                total: DCS.engine.player.MMR_CALIB_MAPS || 10
+              }, ((DCS.engine.player.MMR_CALIB_MAPS || 10) - p.mmrCalibLeft) + '/' + (DCS.engine.player.MMR_CALIB_MAPS || 10)) + '</span>'
+            : '') +
+        '</span></div>' +
         '<div class="hud-item"><span class="hud-k">' + t('hud.rating') + '</span><span class="hud-v">' + (last === null ? t('common.none') : last) + '</span></div>' +
         '<div class="hud-item"><span class="hud-k">' + t('hud.rep') + '</span><span class="hud-v">' + Math.round(p.reputation) + '</span></div>' +
         '<div class="hud-item"><span class="hud-k">€</span><span class="hud-v">' + fmt.money(DCS.engine.finance.snapshot(state).cash) + '</span></div>' +
