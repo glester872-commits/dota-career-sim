@@ -5,6 +5,8 @@
   for (var i = 0; i < HEROES.length; i++) BY_ID[HEROES[i].id] = HEROES[i];
 
   var CDN = 'https://cdn.cloudflare.steamstatic.com';
+  /* ROLE_POOL: filtro por etiquetas Valve. Respaldo de poolForRole.
+     pickForMap y ensurePreferred usan POSITION_POOLS (circuito real). */
   var ROLE_POOL = {
     carry: ['Carry', 'Escape', 'Nuker'],
     mid: ['Nuker', 'Escape', 'Carry', 'Pusher'],
@@ -83,7 +85,9 @@
   }
 
   function pickForMap(state, rng, role) {
-    var pool = poolForRole(role || (state.player && state.player.role) || 'mid');
+    var r = role || (state.player && state.player.role) || 'mid';
+    var pool = poolForPosition(r);
+    if (!pool.length) pool = poolForRole(r);
     return rng.pick(pool).id;
   }
 
@@ -108,15 +112,17 @@
     return s.wins / s.maps;
   }
 
-  /** Top heroes: prefer representative samples, then wins, then winrate. */
+  function emptyHeroRow(id) {
+    return { id: Number(id), maps: 0, wins: 0, losses: 0, winrate: 0, filler: true };
+  }
+
+  /** Top 3: stats reales primero; si faltan, preferidos y luego el pool del rol. */
   function topThree(state) {
-    var bag = (state.career && state.career.heroStats) || {};
+    var bag = (state && state.career && state.career.heroStats) || {};
     var list = Object.keys(bag).map(function (id) {
       var s = bag[id];
-      return { id: Number(id), maps: s.maps, wins: s.wins, losses: s.losses, winrate: winrate(s) };
+      return { id: Number(id), maps: s.maps, wins: s.wins, losses: s.losses, winrate: winrate(s), filler: false };
     }).filter(function (x) { return x.maps > 0 && BY_ID[x.id]; });
-
-    if (!list.length) return [];
 
     var maxMaps = 0;
     list.forEach(function (x) { if (x.maps > maxMaps) maxMaps = x.maps; });
@@ -131,7 +137,27 @@
       if (b.winrate !== a.winrate) return b.winrate - a.winrate;
       return b.maps - a.maps;
     });
-    return filtered.slice(0, 3);
+
+    var out = filtered.slice(0, 3);
+    var used = Object.create(null);
+    out.forEach(function (x) { used[x.id] = true; });
+
+    function addId(id) {
+      if (out.length >= 3 || id == null || used[id] || !BY_ID[id]) return;
+      used[id] = true;
+      out.push(emptyHeroRow(id));
+    }
+
+    var preferred = ensurePreferred(state);
+    for (var i = 0; i < preferred.length; i++) addId(preferred[i]);
+
+    if (out.length < 3) {
+      var role = (state && state.player && state.player.role) || 'mid';
+      var pool = poolForPosition(role);
+      if (!pool.length) pool = poolForRole(role);
+      for (var j = 0; j < pool.length && out.length < 3; j++) addId(pool[j].id);
+    }
+    return out;
   }
 
   function get(id) { return BY_ID[id] || BY_ID[String(id)] || null; }

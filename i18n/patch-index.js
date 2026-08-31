@@ -36,9 +36,13 @@ ${LANG_CSS_MARK}
   text-transform: uppercase; color: var(--text-3);
 }
 .lang-switch .lang-btn {
+  display: inline-flex; align-items: center; gap: 6px;
   background: transparent; border: 0; color: inherit; cursor: pointer;
   padding: 4px 6px; min-height: 28px; opacity: 0.55; font: inherit;
   letter-spacing: inherit; text-transform: inherit;
+}
+.lang-switch .lang-code {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
 }
 .lang-switch .lang-btn:hover,
 .lang-switch .lang-btn:focus-visible { opacity: 1; color: var(--text); outline: none; }
@@ -144,6 +148,10 @@ if (html.includes(LANG_CSS_MARK)) {
 }
 
 function once(label, find, repl) {
+  if (html.includes(repl)) {
+    console.log('SKIP (already):', label);
+    return false;
+  }
   if (!html.includes(find)) {
     console.warn('SKIP (not found):', label);
     return false;

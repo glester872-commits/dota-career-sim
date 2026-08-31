@@ -203,6 +203,48 @@
     return String(label);
   }
 
+  /* Legacy Spanish/English literals stored on teams, offers and saves. */
+  var PHRASE_ALIASES = {
+    'Crecer y no descender': 'phrase.expectStayUp',
+    'Pelear el ascenso': 'phrase.expectPromote',
+    'Ganar la división': 'phrase.expectWinDiv',
+    'Consolidarse en la categoría': 'phrase.expectSolid',
+    'Clasificarse para eventos internacionales': 'phrase.expectIntl',
+    'Ascender a Tier 1': 'phrase.expectT1',
+    'Mantener la plaza': 'phrase.expectKeep',
+    'Entrar en playoffs internacionales': 'phrase.expectPlayoffs',
+    'Clasificarse para The International': 'phrase.expectTI',
+    'Pelear títulos internacionales': 'phrase.expectTitles',
+    'Agresivo': 'phrase.styleAggressive',
+    'Metódico': 'phrase.styleMethodical',
+    'Caótico': 'phrase.styleChaotic',
+    'Estratégico': 'phrase.styleStrategic',
+    'Reactivo': 'phrase.styleReactive',
+    'Ultraofensivo': 'phrase.styleUltra',
+    'Paciente': 'phrase.stylePatient',
+    'Aggressive': 'phrase.styleAggressive',
+    'Methodical': 'phrase.styleMethodical',
+    'Chaotic': 'phrase.styleChaotic',
+    'Strategic': 'phrase.styleStrategic',
+    'Reactive': 'phrase.styleReactive',
+    'Ultra-offensive': 'phrase.styleUltra',
+    'Patient': 'phrase.stylePatient',
+    'Candidato a todo, incluido The International': 'phrase.oddsT1All',
+    'Presencia habitual en torneos internacionales': 'phrase.oddsT1Regular',
+    'Peleará por entrar en los grandes eventos': 'phrase.oddsT1Fight',
+    'Opciones reales de dar el salto a Tier 1': 'phrase.oddsT2Jump',
+    'Circuito regional y algún clasificatorio': 'phrase.oddsT2Regional',
+    'Ligas menores y clasificatorios abiertos': 'phrase.oddsT3Minors',
+    'Apuesta temprana en tu región': 'phrase.noteEarlyBet',
+    'Puerta de entrada en tu región': 'phrase.noteGateway',
+    'Te ven con margen: contrato de debut en Tier 2 regional.': 'phrase.noteDebutT2',
+    'Contrato de debut. Compara y elige dónde empezar.': 'phrase.noteDebutT3',
+    'Contrato corto para demostrar que sigues ahí: poco fijo, mucho por objetivos': 'phrase.noteProveIt',
+    'Keep your slot': 'phrase.expectKeep',
+    'Fight for promotion': 'phrase.expectPromote',
+    'Win the division': 'phrase.expectWinDiv'
+  };
+
   var i18n = {
     DEFAULT_LANG: DEFAULT_LANG,
     SUPPORTED: SUPPORTED.slice(),
@@ -317,6 +359,21 @@
       return resolve(key, null, rt.verdict || '');
     },
 
+    /**
+     * Translate a stored phrase: a catalog key, or a legacy Spanish/English
+     * literal from older saves.
+     */
+    phrase: function (text, vars) {
+      if (text == null || text === '') return '';
+      var s = String(text);
+      if (PHRASE_ALIASES[s]) s = PHRASE_ALIASES[s];
+      if (s.indexOf('.') > 0) {
+        var translated = resolve(s, vars || null, '');
+        if (translated) return translated;
+      }
+      return interpolate(String(text), vars);
+    },
+
     /** Resolve without missing-key warnings (for optional tone fallbacks). */
     peek: function (key, vars) {
       var primary = asString(deepGet(catalogs[lang], key), vars || null);
@@ -384,8 +441,9 @@
         html += '<button type="button" class="lang-btn' + active +
           '" data-action="set-lang" data-value="' + code + '" aria-pressed="' +
           (code === lang ? 'true' : 'false') + '" title="' + label + '" aria-label="' + label + '">' +
-          '<img class="lang-flag" src="https://flagcdn.com/w40/' + iso + '.png" width="28" height="20" alt="' +
-          label + '" loading="lazy" decoding="async">' +
+          '<img class="lang-flag" src="https://flagcdn.com/w40/' + iso + '.png" width="28" height="20" alt="" ' +
+          'loading="lazy" decoding="async">' +
+          '<span class="lang-code">' + code.toUpperCase() + '</span>' +
           '</button>';
       }
       html += '</div>';

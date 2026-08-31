@@ -15,12 +15,13 @@ I18N_ES = {
     "nav": {"inbox": "Bandeja"},
     "heroes": {
         "topThree": "Mejores tres héroes",
-        "topThreeSub": "Según tus partidas oficiales: victorias primero, luego porcentaje.",
+        "topThreeSub": "Según tus partidas oficiales.",
         "empty": "Todavía no hay suficientes partidas para destacar héroes.",
         "maps": "Partidas",
         "wins": "Victorias",
         "losses": "Derrotas",
         "winrate": "Winrate",
+        "noMapsYet": "Sin partidas todavía",
         "portraitAlt": "Retrato de {{name}}",
     },
     "inbox": {
@@ -49,6 +50,9 @@ I18N_ES = {
         "viewTournament": "Ver torneo",
         "viewResults": "Ver resultados",
         "viewOffers": "Ver ofertas",
+        "hintAcceptOffer": "Firmar y unirte a este equipo.",
+        "hintRejectOffer": "Descartar esta oferta.",
+        "hintViewOffers": "Ver el mercado completo.",
         "cat": {
             "offers": "Ofertas",
             "tournaments": "Torneos",
@@ -84,12 +88,13 @@ I18N_EN = {
     "nav": {"inbox": "Inbox"},
     "heroes": {
         "topThree": "Top three heroes",
-        "topThreeSub": "Based on your official matches: wins first, then win rate.",
+        "topThreeSub": "Based on your official matches.",
         "empty": "Not enough matches yet to highlight heroes.",
         "maps": "Matches",
         "wins": "Wins",
         "losses": "Losses",
         "winrate": "Win rate",
+        "noMapsYet": "No matches yet",
         "portraitAlt": "Portrait of {{name}}",
     },
     "inbox": {
@@ -118,6 +123,9 @@ I18N_EN = {
         "viewTournament": "View tournament",
         "viewResults": "View results",
         "viewOffers": "View offers",
+        "hintAcceptOffer": "Sign and join this team.",
+        "hintRejectOffer": "Turn this offer down.",
+        "hintViewOffers": "Open the full transfer market.",
         "cat": {
             "offers": "Offers",
             "tournaments": "Tournaments",
@@ -356,9 +364,9 @@ INBOX_MODULE = r"""
       expiresAt: offer.expiresAt || null,
       meta: { offerId: offer.id, teamId: offer.teamId },
       actions: [
-        { id: 'accept-offer', labelKey: 'common.accept', confirm: true },
-        { id: 'reject-offer', labelKey: 'common.reject', confirm: true },
-        { id: 'view-offers', labelKey: 'inbox.viewOffers', confirm: false }
+        { id: 'accept-offer', labelKey: 'common.accept', hintKey: 'inbox.hintAcceptOffer', confirm: true },
+        { id: 'reject-offer', labelKey: 'common.reject', hintKey: 'inbox.hintRejectOffer', confirm: true },
+        { id: 'view-offers', labelKey: 'inbox.viewOffers', hintKey: 'inbox.hintViewOffers', confirm: false }
       ]
     });
   }
@@ -708,13 +716,17 @@ def main() -> None:
         when.toLocaleString(DCS.i18n && DCS.i18n.getLang() === 'en' ? 'en-US' : 'es-ES');
       var actions = '';
       if (!mail.resolved && mail.actions && mail.actions.length && !IB.isExpired(mail)) {
-        actions = '<div class="mail-actions">' + mail.actions.map(function (a, ai) {
+        actions = '<div class="mail-decision">' +
+          '<div class="modal-kicker">' + t('modal.decision', null, 'Decisión') + '</div>' +
+          '<div class="choices">' + mail.actions.map(function (a, ai) {
           var label = a.labelKey ? t(a.labelKey, null, a.label || '') : (a.label || '');
-          return c.btn(label, 'inbox-action', {
-            value: mail.id + '|' + ai,
-            variant: ai === 0 ? 'primary' : 'ghost'
-          });
-        }).join('') + '</div>';
+          var hint = '';
+          if (a.hintKey) hint = t(a.hintKey, a.hintVars || null, a.hint || '');
+          else if (a.hint) hint = a.hint;
+          return '<button type="button" class="choice" data-action="inbox-action" data-value="' +
+            c.esc(mail.id + '|' + ai) + '"><b>' + c.esc(label) + '</b>' +
+            (hint ? '<span>' + c.esc(hint) + '</span>' : '') + '</button>';
+        }).join('') + '</div></div>';
       }
       var result = mail.resolved
         ? '<p class="mail-result"><b>' + t('inbox.resolved') + ':</b> ' + c.esc(IB.resultOf(mail) || '—') + '</p>'
@@ -985,6 +997,10 @@ def main() -> None:
 .mail-side { flex-shrink: 0; }
 .mail-cat { font-size: 11px; color: var(--text-3); }
 .mail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.mail-decision { margin-top: 16px; }
+.mail-decision .modal-kicker { margin-bottom: 2px; }
+.mail-decision .choices { margin-top: 10px; }
+.mail-decision .choice { width: 100%; display: block; }
 .mail-result { margin-top: 10px; }
 @media (max-width: 720px) {
   .hero-portrait { width: 56px; height: 32px; }
